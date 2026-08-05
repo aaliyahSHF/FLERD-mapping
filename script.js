@@ -1,6 +1,6 @@
 var map = L.map('map').setView(
 [41.986,-73.619],
-16
+25
 );
 
 
