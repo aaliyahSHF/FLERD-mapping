@@ -1,6 +1,6 @@
 .last-seen {
   /*
-    Most recent Flerd location.
+    Most recent Flerd loc
   */
 }
 
@@ -10,14 +10,14 @@
 
 .record-target {
   /*
-    Temporary location marker
+    Temporary loc marker
     while recording.
   */
 }
 
 .edit-btn.active {
   /*
-    Indicates that Edit Pins mode
+    Shows that Edit Pins mode
     is currently active.
   */
 }
