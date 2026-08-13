@@ -60,6 +60,9 @@ let pastureEditMode = false;
 let selectedPastureFilter = null;
 let selectedFilterType = null;
 
+// Historical date lookup. Format: YYYY-MM-DD.
+let selectedPastPathDate = null;
+
 let pastureLegendOpen = false;
 let toastTimer = null;
 let refreshInProgress = false;
@@ -189,6 +192,25 @@ function wireUi() {
   $("pastureToggle").addEventListener("click", () => {
     pastureLegendOpen = !pastureLegendOpen;
     renderPastureLegend();
+  });
+
+  $("pastPathShow").addEventListener("click", showPastPathLookup);
+  $("pastPathClear").addEventListener("click", clearPastPathLookup);
+
+  $("pastPathDate").addEventListener("keydown", event => {
+    if (event.key === "Enter") showPastPathLookup();
+  });
+
+  $("pastPathDate").addEventListener("input", event => {
+    const digits = event.target.value.replace(/\D/g, "").slice(0, 8);
+    if (digits.length <= 2) {
+      event.target.value = digits;
+    } else if (digits.length <= 4) {
+      event.target.value = `${digits.slice(0, 2)}/${digits.slice(2)}`;
+    } else {
+      event.target.value =
+        `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+    }
   });
 
   $("pastureLegend").addEventListener("click", event => {
@@ -1240,6 +1262,30 @@ function segmentsIntersect(
 function drawPaths(records) {
   pathLayer.clearLayers();
 
+  if (selectedPastPathDate) {
+    const dayRecords = records.filter(
+      record =>
+        dateKeyFromRecord(record) === selectedPastPathDate &&
+        record.x !== null &&
+        record.y !== null
+    );
+
+    if (dayRecords.length >= 2) {
+      L.polyline(
+        dayRecords.map(record => [record.y, record.x]),
+        {
+          color: "#111",
+          weight: 2.2,
+          opacity: 0.92,
+          lineJoin: "round",
+          lineCap: "round"
+        }
+      ).addTo(pathLayer);
+    }
+
+    return;
+  }
+
   if (records.length < 2) {
     return;
   }
@@ -1419,6 +1465,13 @@ function drawMarkers() {
 
   let records =
     sortedRecords();
+
+  if (selectedPastPathDate) {
+    records = records.filter(
+      record =>
+        dateKeyFromRecord(record) === selectedPastPathDate
+    );
+  }
 
   if (
     selectedFilterType === "pins" &&
@@ -1621,6 +1674,38 @@ function drawEverything() {
 ------------------------------------------------------- */
 
 function updateStatusText(records) {
+  if (selectedPastPathDate) {
+    const dayRecords = records.filter(
+      record =>
+        dateKeyFromRecord(record) === selectedPastPathDate
+    );
+
+    if (!dayRecords.length) {
+      $("lastSeenText").textContent =
+        "No location found for the selected date.";
+      $("sevenDayText").textContent =
+        "Past Path Lookup is active.";
+      return;
+    }
+
+    const first = dayRecords[0];
+    const last = dayRecords[dayRecords.length - 1];
+
+    $("lastSeenText").innerHTML =
+      `<strong>Past Path Lookup:</strong> ${esc(
+        formatDate(last.dateTime)
+      )} · ${dayRecords.length} location${
+        dayRecords.length === 1 ? "" : "s"
+      }`;
+
+    $("sevenDayText").textContent =
+      dayRecords.length === 1
+        ? `One documented location at ${formatTime(last.dateTime, last.time)}.`
+        : `Path from ${formatTime(first.dateTime, first.time)} to ${formatTime(last.dateTime, last.time)}.`;
+
+    return;
+  }
+
   if (!records.length) {
     $("lastSeenText").textContent =
       "No location yet";
@@ -1671,6 +1756,99 @@ function updateStatusText(records) {
         ? ""
         : "s"
     } in the last 7 days`;
+}
+
+
+/* -------------------------------------------------------
+   PAST PATH LOOKUP
+------------------------------------------------------- */
+
+function parseLookupDate(value) {
+  const match = String(value || "")
+    .trim()
+    .match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+
+  if (!match) return null;
+
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  const year = Number(match[3]);
+
+  const date = new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function dateKeyFromRecord(record) {
+  if (!record.dateTime) return null;
+
+  return `${record.dateTime.getFullYear()}-` +
+    `${String(record.dateTime.getMonth() + 1).padStart(2, "0")}-` +
+    `${String(record.dateTime.getDate()).padStart(2, "0")}`;
+}
+
+function showPastPathLookup() {
+  const input = $("pastPathDate");
+  const status = $("pastPathStatus");
+  const key = parseLookupDate(input.value);
+
+  if (!key) {
+    selectedPastPathDate = null;
+    status.textContent = "Enter a valid date as MM/DD/YYYY.";
+    drawEverything();
+    return;
+  }
+
+  const matching = sortedRecords().filter(
+    record =>
+      dateKeyFromRecord(record) === key &&
+      record.x !== null &&
+      record.y !== null
+  );
+
+  if (!matching.length) {
+    selectedPastPathDate = null;
+    status.textContent =
+      `No Flerd locations were found for ${input.value}.`;
+    drawEverything();
+    return;
+  }
+
+  selectedPastPathDate = key;
+
+  const labelDate = new Date(
+    Number(key.slice(0, 4)),
+    Number(key.slice(5, 7)) - 1,
+    Number(key.slice(8, 10))
+  );
+
+  status.innerHTML =
+    `<span class="past-path-active">Viewing ${esc(
+      labelDate.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric"
+      })
+    )}</span> · ${matching.length} location${matching.length === 1 ? "" : "s"}`;
+
+  drawEverything();
+  showToast(`Showing Flerd movement for ${input.value}.`);
+}
+
+function clearPastPathLookup() {
+  selectedPastPathDate = null;
+  $("pastPathDate").value = "";
+  $("pastPathStatus").textContent = "";
+  drawEverything();
+  showToast("Returned to the normal map.");
 }
 
 /* -------------------------------------------------------
