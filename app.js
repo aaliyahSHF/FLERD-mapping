@@ -6,12 +6,10 @@ const CONFIG = {
   LOCAL_CSV:
     "data/flerd-log.csv",
 
-  /*
-    PASTE YOUR GOOGLE APPS SCRIPT
-    /exec URL HERE.
-  */
+ 
+
   APPS_SCRIPT_URL:
-    "",
+    "https://script.google.com/macros/s/AKfycbyOx1SwoZhcNYv4RpB3BMKkoSycDRFTsThc31jzzOLTig7shgCu2IDDb0cRX1m53Y_Ufg/exec",
 
   DATA_YEAR: 2026,
 
