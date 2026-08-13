@@ -1,7 +1,7 @@
 const SHEET_ID =
   "1AbCDeFGhijkLMNopQRsTuvWXYZ123456789";
 
-const SHEET_NAME = "FLERD_tracking_data";
+const SHEET_NAME = "Log";
 
 
 const HEADERS = [
