@@ -22,7 +22,7 @@ const CONFIG = {
   PASTURE_WEIGHT: 2.5,
 
   /*
-    Google Sheet is checked every
+    Google Sheet sync every
     15 seconds.
   */
   SYNC_INTERVAL_MS: 15000,
