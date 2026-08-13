@@ -1,7 +1,7 @@
 const SHEET_ID =
-  "PASTE_GOOGLE_SHEET_ID_HERE";
+  "1AbCDeFGhijkLMNopQRsTuvWXYZ123456789";
 
-const SHEET_NAME = "Sheet1";
+const SHEET_NAME = "FLERD_tracking_data";
 
 
 const HEADERS = [
