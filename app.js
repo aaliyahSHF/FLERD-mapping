@@ -9,7 +9,7 @@ const CONFIG = {
  
 
   APPS_SCRIPT_URL:
-    "https://script.google.com/macros/s/AKfycbyOx1SwoZhcNYv4RpB3BMKkoSycDRFTsThc31jzzOLTig7shgCu2IDDb0cRX1m53Y_Ufg/exec",
+    "https://script.google.com/macros/s/AKfycbx05fAaIg3-5CKLtlSxJT0k6Agq8N_HlOp0ie5FypnAGRWJI8H_BKav2zxTL80SCbRZXw/exec",
 
   DATA_YEAR: 2026,
 
