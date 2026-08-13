@@ -4,7 +4,9 @@
 Hi!!!!!! -Aaliyah 
 
 
-This Leaflet + GitHub Pages + Google Sheets masterpiece of a pasture tracker is for tracking the Flerd as they free graze across the pastures at the home farm. 
+# Flerd Pasture Tracker
+
+This Leaflet + GitHub Pages + Google Sheets pasture tracker is for tracking the Flerd as they free graze across the pastures at the home farm. 
 
 ## Features
 
@@ -32,10 +34,10 @@ This Leaflet + GitHub Pages + Google Sheets masterpiece of a pasture tracker is 
 - `index.html` — page structure.
 - `styles.css` — desktop/mobile styling.
 - `app.js` — Leaflet map, pins, paths, recording, editing, and sync.
-- `pastures.js` — pasture polygons and shapes & such. Edit this to adjust pasture boundary lines.
+- `pastures.js` — pasture polygons and shapes & such. Edit this to adjust fence lines.
 - `google-apps-script.gs` — Google Sheets backend.
-- `assets/SHF map.png` — farm map screenshot (Goog maps)
-- `data/flerd-log.csv` — local fallback data.(Google Sheets)
+- `SHF map.png` — farm map screenshot
+- `FLERD tracking data - Log.csv` — local fallback data
 
 ## Google Sheets setup
 
@@ -44,7 +46,7 @@ This Leaflet + GitHub Pages + Google Sheets masterpiece of a pasture tracker is 
 
 The Apps Script will create IDs for existing rows if they are blank.
 
-### Apps Script (if you make a new Google Sheet for data recording)
+### Apps Script (if new Google Sheet is made for data, in future)
 
 1. Create/open the Google Sheet.
 2. Extensions -> Apps Script.
@@ -58,7 +60,7 @@ The Apps Script will create IDs for existing rows if they are blank.
 
 ### Important sync behavior
 
-The site syncs up with Google Sheets every 15 seconds rather than using a true live push connection. If the sheet changes, the map normally reflects the change within 15 seconds (coded as 15000 ms).
+The site sync up with Google Sheets every 15 seconds rather than using a true live push connection. If the sheet changes, the map normally reflects the change within 15 seconds.
 
 If two people edit the same record at the same time, the most recent save wins.
 
