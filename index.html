@@ -1,27 +1,323 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="utf-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  >
 
-    <title>Home Farm Pasture Map</title>
+  <title>Flerd Pasture Tracker</title>
 
-    <link
-        rel="stylesheet"
-        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    >
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  >
 
-    <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
 
-    <h1>Home Farm Pasture Map</h1>
+  <main id="map" aria-label="Flerd pasture map"></main>
 
-    <div id="map"></div>
+  <!-- TOP BAR -->
+  <section class="topbar">
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="script.js"></script>
+    <div class="title-card">
+      <h1>Flerd Pasture Tracker</h1>
+
+      <div id="syncStatus" class="sync-status">
+        Loading…
+      </div>
+    </div>
+
+    <div class="top-actions">
+
+      <button
+        id="editBtn"
+        class="edit-btn"
+        type="button"
+      >
+        ✎ Edit pins
+      </button>
+
+      <button
+        id="recordBtn"
+        class="record-btn"
+        type="button"
+      >
+        ＋ Record location
+      </button>
+
+    </div>
+
+  </section>
+
+
+  <!-- LEGEND -->
+  <aside
+    id="legend"
+    class="legend"
+    aria-label="Flerd status legend"
+  >
+
+    <h2>Flerd status</h2>
+
+    <div class="legend-section">
+
+      <h3>Last seen</h3>
+
+      <div class="legend-row">
+        <span class="legend-last-dot"></span>
+        <span>Last documented pin</span>
+      </div>
+
+      <div
+        id="lastSeenText"
+        class="legend-detail"
+      >
+        No location yet
+      </div>
+
+    </div>
+
+
+    <div class="legend-section">
+
+      <h3>Last 7 days</h3>
+
+      <div class="legend-row">
+        <span class="legend-line"></span>
+        <span>Movement path</span>
+      </div>
+
+      <div
+        id="sevenDayText"
+        class="legend-detail"
+      >
+        No recent locations yet
+      </div>
+
+    </div>
+
+
+    <div class="legend-section">
+
+      <h3>Pastures</h3>
+
+      <div
+        id="pastureLegend"
+        class="pasture-list"
+      ></div>
+
+    </div>
+
+
+    <div class="legend-footer">
+
+      <strong>Record location</strong>
+      adds a new pin.
+
+      <strong>Edit pins</strong>
+      lets you drag an existing pin to a more accurate location.
+
+      Automatically syncs with Google Sheets!
+
+    </div>
+
+  </aside>
+
+
+  <!-- NEW RECORD PANEL -->
+  <div
+    id="recordPanel"
+    class="record-panel hidden"
+    role="dialog"
+    aria-modal="true"
+  >
+
+    <div class="record-card">
+
+      <div class="record-header">
+
+        <h2>Record Flerd location</h2>
+
+        <button
+          id="closeRecord"
+          type="button"
+          aria-label="Close"
+        >
+          ×
+        </button>
+
+      </div>
+
+      <p id="tapHint">
+        Tap the map to choose a location.
+      </p>
+
+      <div
+        id="selectedLocation"
+        class="selected-location hidden"
+      ></div>
+
+      <label for="notes">
+        Notes (optional)
+      </label>
+
+      <textarea
+        id="notes"
+        rows="3"
+        placeholder="e.g. under apple tree, near rock wall…"
+      ></textarea>
+
+      <div class="record-actions">
+
+        <button
+          id="cancelRecord"
+          class="secondary-btn"
+          type="button"
+        >
+          Cancel
+        </button>
+
+        <button
+          id="saveRecord"
+          class="primary-btn"
+          type="button"
+          disabled
+        >
+          Save location
+        </button>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <!-- EDIT RECORD PANEL -->
+  <div
+    id="editPanel"
+    class="record-panel hidden"
+    role="dialog"
+    aria-modal="true"
+  >
+
+    <div class="record-card">
+
+      <div class="record-header">
+
+        <h2>Move Flerd pin</h2>
+
+        <button
+          id="closeEdit"
+          type="button"
+          aria-label="Close"
+        >
+          ×
+        </button>
+
+      </div>
+
+      <p>
+        Drag the pin to the accurate location.
+        You can also edit the date, time, or note.
+      </p>
+
+      <div
+        id="editSelectedLocation"
+        class="selected-location"
+      ></div>
+
+
+      <div class="form-grid">
+
+        <div>
+
+          <label for="editDate">
+            Date
+          </label>
+
+          <input
+            id="editDate"
+            type="date"
+          >
+
+        </div>
+
+
+        <div>
+
+          <label for="editTime">
+            Time
+          </label>
+
+          <input
+            id="editTime"
+            type="time"
+          >
+
+        </div>
+
+      </div>
+
+
+      <label for="editNotes">
+        Notes
+      </label>
+
+      <textarea
+        id="editNotes"
+        rows="3"
+        placeholder="Update the note if needed…"
+      ></textarea>
+
+
+      <div class="record-actions">
+
+        <button
+          id="cancelEditBtn"
+          class="secondary-btn"
+          type="button"
+        >
+          Cancel
+        </button>
+
+        <button
+          id="saveEdit"
+          class="primary-btn"
+          type="button"
+        >
+          Save pin position
+        </button>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <div
+    id="toast"
+    class="toast"
+    aria-live="polite"
+  ></div>
+
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  ></script>
+
+  <script
+    src="https://cdn.jsdelivr.net/npm/papaparse@5.5.3/papaparse.min.js"
+  ></script>
+
+  <script src="pastures.js"></script>
+  <script src="app.js"></script>
 
 </body>
-</html> 
+</html>
