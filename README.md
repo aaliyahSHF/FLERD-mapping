@@ -1,9 +1,9 @@
 
 # Flerd Pasture Tracker
 
-Hi!!!!!! -Aaliyah 
+Hi!!!!!!! - Aaliyah :) 
 
-This Leaflet + GitHub Pages + Google Sheets combination pasture tracker is for tracking the Flerd as they free graze across the pastures at the home farm. 
+This Leaflet + GitHub + Google Sheets masterpiece of a pasture tracker is for tracking the Flerd as the free graze across the pastures at the home farm. 
 
 ## Features
 
@@ -43,7 +43,7 @@ This Leaflet + GitHub Pages + Google Sheets combination pasture tracker is for t
 
 The Apps Script will create IDs for existing rows if they are blank.
 
-### Apps Script (if new Google Sheet is made for data, in future)
+### Apps Script (if new Google Sheet)
 
 1. Create/open the Google Sheet.
 2. Extensions -> Apps Script.
