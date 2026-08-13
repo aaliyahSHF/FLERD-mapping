@@ -1,44 +1,34 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8">
 
   <meta
     name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
+    content="width=device-width, initial-scale=1, viewport-fit=cover">
 
-  <title>FLERD!!!</title>
+  <title>Flerd Pasture Tracker</title>
 
-  <!-- Leaflet -->
   <link
     rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  >
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 
-  <!-- Website styling -->
-  <link rel="stylesheet" href="styles.css">
+  <link
+    rel="stylesheet"
+    href="styles.css">
 </head>
-
 
 <body>
 
-  <!-- =====================================================
-       MAP
-       ===================================================== -->
-
-  <div
+  <main
     id="map"
-    aria-label="Flerd pasture map"
-  ></div>
+    aria-label="Flerd pasture map">
+  </main>
 
 
-  <!-- =====================================================
-       TOP CONTROLS
-       ===================================================== -->
+  <!-- TOP BAR -->
 
-  <div class="topbar">
+  <section class="topbar">
 
     <div class="title-card">
 
@@ -46,9 +36,8 @@
 
       <div
         id="syncStatus"
-        class="sync-status"
-      >
-        Loading...
+        class="sync-status">
+        Loading…
       </div>
 
     </div>
@@ -57,35 +46,51 @@
     <div class="top-actions">
 
       <button
-        id="editBtn"
-        class="edit-btn"
-        type="button"
-      >
-        Edit pins
+        id="editPasturesBtn"
+        class="edit-btn pasture-edit-btn"
+        type="button">
+        Edit pasture boundaries
       </button>
 
+      <button
+        id="savePasturesBtn"
+        class="edit-btn hidden"
+        type="button">
+        Save boundaries
+      </button>
+
+      <button
+        id="cancelPasturesBtn"
+        class="edit-btn hidden"
+        type="button">
+        Cancel
+      </button>
+
+      <button
+        id="editBtn"
+        class="edit-btn"
+        type="button">
+        Edit pins
+      </button>
 
       <button
         id="recordBtn"
         class="record-btn"
-        type="button"
-      >
-        + Record location
+        type="button">
+        Record location
       </button>
 
     </div>
 
-  </div>
+  </section>
 
 
-  <!-- =====================================================
-       FLERD STATUS LEGEND
-       ===================================================== -->
+  <!-- LEGEND -->
 
   <aside
     id="legend"
     class="legend"
-  >
+    aria-label="Flerd status legend">
 
     <h2>Flerd status</h2>
 
@@ -106,12 +111,58 @@
 
       </div>
 
-
       <div
         id="lastSeenText"
-        class="legend-detail"
-      >
+        class="legend-detail">
         No location yet
+      </div>
+
+
+      <!-- PAST PATH LOOKUP -->
+
+      <div class="past-path-lookup">
+
+        <div class="past-path-title">
+          Past Path Lookup
+        </div>
+
+        <div class="past-path-help">
+          Enter a date to see the Flerd's movement that day.
+        </div>
+
+        <div class="past-path-controls">
+
+          <input
+            id="pastPathDate"
+            class="past-path-date"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            placeholder="MM/DD/YYYY"
+            maxlength="10"
+            aria-label="Past path date">
+
+          <button
+            id="pastPathShow"
+            class="past-path-btn"
+            type="button">
+            Show Path
+          </button>
+
+          <button
+            id="pastPathClear"
+            class="past-path-btn secondary"
+            type="button">
+            Clear
+          </button>
+
+        </div>
+
+        <div
+          id="pastPathStatus"
+          class="past-path-status">
+        </div>
+
       </div>
 
     </div>
@@ -133,11 +184,9 @@
 
       </div>
 
-
       <div
         id="sevenDayText"
-        class="legend-detail"
-      >
+        class="legend-detail">
         No recent locations yet
       </div>
 
@@ -146,51 +195,64 @@
 
     <!-- PASTURES -->
 
-    <div class="legend-section">
+    <div class="legend-section pasture-section">
 
-      <h3>Pastures</h3>
+      <button
+        id="pastureToggle"
+        class="pasture-toggle"
+        type="button">
+
+        <span>
+          Pastures
+        </span>
+
+        <span
+          id="pastureChevron"
+          class="pasture-chevron">
+          ▼
+        </span>
+
+      </button>
+
 
       <div
         id="pastureLegend"
-        class="pasture-list"
-      ></div>
+        class="pasture-list collapsed">
+
+        <div class="pasture-collapsed-hint">
+          Click Pastures to choose a pasture
+        </div>
+
+      </div>
 
     </div>
 
 
-    <!-- LEGEND HELP -->
+    <!-- HELP -->
 
     <div class="legend-footer">
 
-      <p>
-        <strong>Record location</strong>
-        adds a new Flerd location.
-      </p>
+      <strong>Record location</strong>
+      adds a new pin.
 
-      <p>
-        <strong>Edit pins</strong>
-        lets you move an existing pin
-        to a more accurate location.
-      </p>
+      <strong>Edit pins</strong>
+      lets you drag an existing pin.
 
-      <p>
-        FLERD!!! data is synched
-        with Google Sheets data.
-      </p>
+      <strong>Edit pasture boundaries</strong>
+      lets you drag pasture points.
 
     </div>
 
   </aside>
 
 
-  <!-- =====================================================
-       RECORD LOCATION PANEL
-       ===================================================== -->
+  <!-- RECORD LOCATION PANEL -->
 
   <div
     id="recordPanel"
     class="record-panel hidden"
-  >
+    role="dialog"
+    aria-modal="true">
 
     <div class="record-card">
 
@@ -200,13 +262,10 @@
           Record Flerd location
         </h2>
 
-
         <button
           id="closeRecord"
-          class="close-button"
           type="button"
-          aria-label="Close"
-        >
+          aria-label="Close">
           ×
         </button>
 
@@ -218,15 +277,11 @@
       </p>
 
 
-      <!-- Selected map location -->
-
       <div
         id="selectedLocation"
-        class="selected-location hidden"
-      ></div>
+        class="selected-location hidden">
+      </div>
 
-
-      <!-- Notes -->
 
       <label for="notes">
         Notes (optional)
@@ -235,29 +290,24 @@
       <textarea
         id="notes"
         rows="3"
-        placeholder="Example: near apple tree"
-      ></textarea>
+        placeholder="e.g. under apple tree, near rock wall…">
+      </textarea>
 
-
-      <!-- Buttons -->
 
       <div class="record-actions">
 
         <button
           id="cancelRecord"
           class="secondary-btn"
-          type="button"
-        >
+          type="button">
           Cancel
         </button>
-
 
         <button
           id="saveRecord"
           class="primary-btn"
           type="button"
-          disabled
-        >
+          disabled>
           Save location
         </button>
 
@@ -268,14 +318,13 @@
   </div>
 
 
-  <!-- =====================================================
-       EDIT PIN PANEL
-       ===================================================== -->
+  <!-- EDIT PIN PANEL -->
 
   <div
     id="editPanel"
     class="record-panel hidden"
-  >
+    role="dialog"
+    aria-modal="true">
 
     <div class="record-card">
 
@@ -285,13 +334,10 @@
           Move Flerd pin
         </h2>
 
-
         <button
           id="closeEdit"
-          class="close-button"
           type="button"
-          aria-label="Close"
-        >
+          aria-label="Close">
           ×
         </button>
 
@@ -300,23 +346,17 @@
 
       <p>
         Drag the pin to the accurate location.
+        You can also correct the date, time, or note.
       </p>
 
 
-      <!-- Current coordinates -->
-
       <div
         id="editSelectedLocation"
-        class="selected-location"
-      >
-        Select a pin to begin.
+        class="selected-location">
       </div>
 
 
-      <!-- Date and time -->
-
       <div class="form-grid">
-
 
         <div>
 
@@ -326,8 +366,7 @@
 
           <input
             id="editDate"
-            type="date"
-          >
+            type="date">
 
         </div>
 
@@ -340,15 +379,12 @@
 
           <input
             id="editTime"
-            type="time"
-          >
+            type="time">
 
         </div>
 
       </div>
 
-
-      <!-- Notes -->
 
       <label for="editNotes">
         Notes
@@ -357,28 +393,23 @@
       <textarea
         id="editNotes"
         rows="3"
-        placeholder="Update notes if needed"
-      ></textarea>
+        placeholder="Update the note if needed…">
+      </textarea>
 
-
-      <!-- Buttons -->
 
       <div class="record-actions">
 
         <button
           id="cancelEditBtn"
           class="secondary-btn"
-          type="button"
-        >
+          type="button">
           Cancel
         </button>
-
 
         <button
           id="saveEdit"
           class="primary-btn"
-          type="button"
-        >
+          type="button">
           Save pin position
         </button>
 
@@ -389,44 +420,34 @@
   </div>
 
 
-  <!-- =====================================================
-       MESSAGE / TOAST
-       ===================================================== -->
+  <!-- MESSAGE TOAST -->
 
   <div
     id="toast"
     class="toast"
-    aria-live="polite"
-  ></div>
+    aria-live="polite">
+  </div>
 
 
-  <!-- =====================================================
-       LEAFLET JAVASCRIPT
-       ===================================================== -->
+  <!-- LEAFLET -->
 
   <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  ></script>
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+  </script>
 
 
-  <!-- =====================================================
-       CSV
-       ===================================================== -->
+  <!-- CSV PARSER -->
 
   <script
-    src="https://cdn.jsdelivr.net/npm/papaparse@5.5.3/papaparse.min.js"
-  ></script>
+    src="https://cdn.jsdelivr.net/npm/papaparse@5.5.3/papaparse.min.js">
+  </script>
 
 
-  <!-- =====================================================
-       FLERD WEBSITE FILES
-       ===================================================== -->
+  <!-- FLERD TRACKER CODE -->
 
   <script src="pastures.js"></script>
 
   <script src="app.js"></script>
 
-
 </body>
-
 </html>
