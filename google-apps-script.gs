@@ -4,385 +4,408 @@ const SHEET_ID =
 const SHEET_NAME = "Log";
 
 
-const HEADERS = [
-  "Date",
-  "Time",
-  "Pasture",
-  "Map X",
-  "Map Y",
-  "Notes",
-  "ID",
-  "Updated At"
-];
 
+function doGet(e) {
+  const action =
+    (e.parameter.action || "getLocations").toString();
 
-function getSheet_() {
-
-  const ss =
-    SpreadsheetApp.openById(SHEET_ID);
-
-  const sheet =
-    ss.getSheetByName(SHEET_NAME);
-
-  if (!sheet) {
-    throw new Error(
-      `Sheet "${SHEET_NAME}" not found.`
+  if (action === "getLocations") {
+    const rows = getLocationRows();
+    return jsonp(
+      e.parameter.callback,
+      rows
     );
   }
 
-  return sheet;
+  return jsonp(
+    e.parameter.callback,
+    { ok: true }
+  );
 }
 
+function doPost(e) {
+  try {
+    const payload =
+      JSON.parse(
+        e.parameter.payload || "{}"
+      );
 
-function ensureHeaders_(sheet) {
+    if (
+      payload.action === "savePastures"
+    ) {
+      savePastures(
+        payload.pastures
+      );
+
+      return textResponse({
+        ok: true
+      });
+    }
+
+    const result =
+      saveLocation(
+        payload
+      );
+
+    return textResponse(
+      result
+    );
+
+  } catch (error) {
+    return textResponse({
+      ok: false,
+      error: String(error)
+    });
+  }
+}
+
+function getLocationSheet() {
+  return SpreadsheetApp
+    .openById(SHEET_ID)
+    .getSheetByName(SHEET_NAME);
+}
+
+function getLocationRows() {
+  const sheet =
+    getLocationSheet();
+
+  const values =
+    sheet.getDataRange()
+      .getValues();
+
+  if (values.length < 2) {
+    return [];
+  }
+
+  const headers =
+    values[0].map(
+      value => String(value)
+    );
+
+  return values
+    .slice(1)
+    .filter(row =>
+      row.some(
+        value =>
+          value !== ""
+      )
+    )
+    .map(row => {
+
+      const object = {};
+
+      headers.forEach(
+        (header, index) => {
+          object[header] =
+            row[index];
+        }
+      );
+
+      return object;
+    });
+}
+
+function saveLocation(payload) {
+  const sheet =
+    getLocationSheet();
+
+  const headers =
+    getHeaders(
+      sheet
+    );
+
+  ensureHeaders(
+    sheet,
+    headers
+  );
+
+  let id =
+    String(
+      payload.ID || ""
+    ).trim();
+
+  if (!id) {
+    id =
+      "FL-" +
+      new Date().getTime() +
+      "-" +
+      Math.random()
+        .toString(36)
+        .slice(2, 7);
+  }
+
+  const updatedAt =
+    new Date().toISOString();
+
+  const rowObject = {
+    "Date":
+      payload.Date || "",
+    "Time":
+      payload.Time || "",
+    "Pasture":
+      payload.Pasture || "",
+    "Map X":
+      payload["Map X"] ?? "",
+    "Map Y":
+      payload["Map Y"] ?? "",
+    "Notes":
+      payload.Notes || "",
+    "ID":
+      id,
+    "Updated At":
+      updatedAt
+  };
+
+  const idColumn =
+    headers.indexOf("ID") + 1;
+
+  const idValues =
+    sheet
+      .getRange(
+        2,
+        idColumn,
+        Math.max(
+          sheet.getLastRow() - 1,
+          1
+        ),
+        1
+      )
+      .getValues();
+
+  let foundRow = -1;
+
+  for (
+    let i = 0;
+    i < idValues.length;
+    i++
+  ) {
+    if (
+      String(
+        idValues[i][0]
+      ) === id
+    ) {
+      foundRow = i + 2;
+      break;
+    }
+  }
+
+  const output =
+    headers.map(
+      header =>
+        rowObject[header] ?? ""
+    );
+
+  if (foundRow >= 2) {
+    sheet
+      .getRange(
+        foundRow,
+        1,
+        1,
+        headers.length
+      )
+      .setValues([
+        output
+      ]);
+
+    return {
+      ok: true,
+      action: "updated",
+      id
+    };
+  }
+
+  sheet.appendRow(
+    output
+  );
+
+  return {
+    ok: true,
+    action: "added",
+    id
+  };
+}
+
+function getHeaders(sheet) {
+  const lastColumn =
+    Math.max(
+      sheet.getLastColumn(),
+      8
+    );
+
+  let headers =
+    sheet
+      .getRange(
+        1,
+        1,
+        1,
+        lastColumn
+      )
+      .getValues()[0]
+      .map(
+        value =>
+          String(value).trim()
+      );
+
+  const required = [
+    "Date",
+    "Time",
+    "Pasture",
+    "Map X",
+    "Map Y",
+    "Notes",
+    "ID",
+    "Updated At"
+  ];
+
+  if (
+    headers.every(
+      header => header === ""
+    )
+  ) {
+    headers = required.slice();
+  }
+
+  required.forEach(
+    header => {
+      if (
+        !headers.includes(
+          header
+        )
+      ) {
+        headers.push(
+          header
+        );
+      }
+    }
+  );
+
+  return headers;
+}
+
+function ensureHeaders(
+  sheet,
+  headers
+) {
+  sheet
+    .getRange(
+      1,
+      1,
+      1,
+      headers.length
+    )
+    .setValues([
+      headers
+    ]);
+}
+
+function jsonp(
+  callback,
+  data
+) {
+  const json =
+    JSON.stringify(data);
+
+  if (!callback) {
+    return ContentService
+      .createTextOutput(
+        json
+      )
+      .setMimeType(
+        ContentService
+          .MimeType
+          .JSON
+      );
+  }
+
+  return ContentService
+    .createTextOutput(
+      callback +
+      "(" +
+      json +
+      ")"
+    )
+    .setMimeType(
+      ContentService
+        .MimeType
+        .JAVASCRIPT
+    );
+}
+
+function textResponse(data) {
+  return ContentService
+    .createTextOutput(
+      JSON.stringify(data)
+    )
+    .setMimeType(
+      ContentService
+        .MimeType
+        .JSON
+    );
+}
+
+/*
+  Optional helper if you later want pasture
+  boundaries stored in Google Sheets too.
+
+  The current website saves edited boundaries
+  in localStorage, so you do not need this yet.
+*/
+function savePastures(pastures) {
+  const ss =
+    SpreadsheetApp
+      .openById(SHEET_ID);
+
+  let sheet =
+    ss.getSheetByName(
+      "Pastures"
+    );
+
+  if (!sheet) {
+    sheet =
+      ss.insertSheet(
+        "Pastures"
+      );
+  }
+
+  sheet.clear();
 
   sheet
     .getRange(
       1,
       1,
       1,
-      HEADERS.length
+      3
     )
-    .setValues([HEADERS]);
-
-
-  /*
-    Give old records permanent IDs.
-  */
-
-  const lastRow =
-    sheet.getLastRow();
-
-  if (lastRow < 2) {
-    return;
-  }
-
-
-  const idRange =
-    sheet.getRange(
-      2,
-      7,
-      lastRow - 1,
-      1
-    );
-
-
-  const ids =
-    idRange.getValues();
-
-
-  let changed = false;
-
-
-  for (let i = 0; i < ids.length; i++) {
-
-    if (!ids[i][0]) {
-
-      ids[i][0] =
-        Utilities.getUuid();
-
-      changed = true;
-
-    }
-
-  }
-
-
-  if (changed) {
-    idRange.setValues(ids);
-  }
-
-}
-
-
-function rowsAsObjects_(sheet) {
-
-  const values =
-    sheet
-      .getDataRange()
-      .getDisplayValues();
-
-
-  if (values.length <= 1) {
-    return [];
-  }
-
-
-  return values
-    .slice(1)
-    .map(row => {
-
-      const obj = {};
-
-      HEADERS.forEach(
-        (header, i) => {
-
-          obj[header] =
-            row[i] ?? "";
-
-        }
-      );
-
-      return obj;
-
-    })
-    .filter(obj =>
-      obj.ID ||
-      obj.Date ||
-      obj.Time ||
-      obj.Pasture ||
-      obj.Notes
-    );
-
-}
-
-
-function doGet(e) {
-
-  const sheet =
-    getSheet_();
-
-  ensureHeaders_(sheet);
-
+    .setValues([
+      [
+        "Pasture",
+        "Color",
+        "Polygon JSON"
+      ]
+    ]);
 
   const rows =
-    rowsAsObjects_(sheet);
-
-
-  const callback =
-    e &&
-    e.parameter &&
-    e.parameter.callback;
-
-
-  /*
-    JSONP lets the GitHub Pages website
-    read the Google Apps Script response
-    without a CORS problem.
-  */
-
-  if (callback) {
-
-    const safeCallback =
-      String(callback)
-        .replace(/[^\w.$]/g, "");
-
-
-    return ContentService
-      .createTextOutput(
-        `${safeCallback}(${JSON.stringify(rows)})`
-      )
-      .setMimeType(
-        ContentService.MimeType.JAVASCRIPT
+    (pastures || [])
+      .map(
+        pasture => [
+          pasture.id,
+          pasture.color || "",
+          JSON.stringify(
+            pasture.polygon
+          )
+        ]
       );
 
-  }
-
-
-  return ContentService
-    .createTextOutput(
-      JSON.stringify(rows)
-    )
-    .setMimeType(
-      ContentService.MimeType.JSON
-    );
-
-}
-
-
-function findRowById_(sheet, id) {
-
-  const lastRow =
-    sheet.getLastRow();
-
-
-  if (
-    lastRow < 2 ||
-    !id
-  ) {
-    return -1;
-  }
-
-
-  const ids =
+  if (rows.length) {
     sheet
       .getRange(
         2,
-        7,
-        lastRow - 1,
-        1
-      )
-      .getDisplayValues();
-
-
-  const target =
-    String(id).trim();
-
-
-  for (
-    let i = 0;
-    i < ids.length;
-    i++
-  ) {
-
-    if (
-      String(ids[i][0]).trim()
-      === target
-    ) {
-
-      return i + 2;
-
-    }
-
-  }
-
-
-  return -1;
-}
-
-
-function writeRecord_(sheet, payload) {
-
-  const id =
-    String(payload.ID || "").trim()
-    || Utilities.getUuid();
-
-
-  const updatedAt =
-    new Date().toISOString();
-
-
-  const row = [
-
-    payload.Date || "",
-
-    payload.Time || "",
-
-    payload.Pasture || "",
-
-    payload["Map X"] ?? "",
-
-    payload["Map Y"] ?? "",
-
-    payload.Notes || "",
-
-    id,
-
-    updatedAt
-
-  ];
-
-
-  /*
-    If the ID already exists,
-    update that row.
-
-    Otherwise create a new row.
-  */
-
-  const existingRow =
-    findRowById_(sheet, id);
-
-
-  if (existingRow > 0) {
-
-    sheet
-      .getRange(
-        existingRow,
         1,
-        1,
-        HEADERS.length
+        rows.length,
+        3
       )
-      .setValues([row]);
-
-
-    return {
-      ok: true,
-      action: "updated",
-      ID: id
-    };
-
+      .setValues(
+        rows
+      );
   }
-
-
-  sheet.appendRow(row);
-
-
-  return {
-    ok: true,
-    action: "created",
-    ID: id
-  };
-
 }
-
-
-function doPost(e) {
-
-  const sheet =
-    getSheet_();
-
-  ensureHeaders_(sheet);
-
-
-  if (
-    !e ||
-    !e.parameter ||
-    !e.parameter.payload
-  ) {
-
-    return ContentService
-      .createTextOutput(
-        JSON.stringify({
-          ok: false,
-          error: "Missing payload"
-        })
-      )
-      .setMimeType(
-        ContentService.MimeType.JSON
-      );
-
-  }
-
-
-  try {
-
-    const payload =
-      JSON.parse(
-        e.parameter.payload
-      );
-
-
-    const result =
-      writeRecord_(
-        sheet,
-        payload
-      );
-
-
-    return ContentService
-      .createTextOutput(
-        JSON.stringify(result)
-      )
-      .setMimeType(
-        ContentService.MimeType.JSON
-      );
-
-  }
-
-  catch (error) {
-
-    return ContentService
-      .createTextOutput(
-        JSON.stringify({
-          ok: false,
-          error: String(error)
-        })
-      )
-      .setMimeType(
-        ContentService.MimeType.JSON
-      );
-
-  }
-
-} 
