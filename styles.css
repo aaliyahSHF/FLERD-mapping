@@ -1,21 +1,23 @@
-html, body {
-    margin: 0;
-    padding: 0;
-    height: 100%;
+.last-seen {
+  /*
+    Most recent Flerd location.
+  */
 }
 
-body {
-    font-family: Arial, sans-serif;
+.approximate-marker {
+  opacity: .45;
 }
 
-h1 {
-    margin: 0;
-    padding: 15px;
-    background-color: #355e3b;
-    color: white;
+.record-target {
+  /*
+    Temporary location marker
+    while recording.
+  */
 }
 
-#map {
-    width: 100%;
-    height: calc(100vh - 60px);
+.edit-btn.active {
+  /*
+    Indicates that Edit Pins mode
+    is currently active.
+  */
 }
