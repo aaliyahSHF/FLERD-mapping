@@ -3,10 +3,7 @@
 
 Hi!!!!!! -Aaliyah 
 
-
-# Flerd Pasture Tracker
-
-This Leaflet + GitHub Pages + Google Sheets pasture tracker is for tracking the Flerd as they free graze across the pastures at the home farm. 
+This Leaflet + GitHub Pages + Google Sheets combination pasture tracker is for tracking the Flerd as they free graze across the pastures at the home farm. 
 
 ## Features
 
