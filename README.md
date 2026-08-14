@@ -7,6 +7,7 @@ This Leaflet + GitHub + Google Sheets masterpiece of a pasture tracker is for tr
 
 ## Features
 
+1st iteration:
 - SHF map image as the base map (using Leaflet).
 - Separate colored pasture boundaries with no pasture-name labels on the map (Choropleth map) .
 - Record a new location by tapping the map.
@@ -25,6 +26,21 @@ This Leaflet + GitHub + Google Sheets masterpiece of a pasture tracker is for tr
 - Stable IDs prevent moving an existing pin from creating a duplicate row.
 - Local CSV fallback is included for development/offline-ish use.
 - Desktop/mobile layout.
+
+2nd iteration (updates):
+- Pasture boundaries can be edited by dragging 
+- CSV/Google Sheet data + locations automatically appear on the map.
+- New map locations can be sent to Google Sheets.
+- Movement path is thinner.
+- Selected pasture is highlighted.
+- Clicking Pastures in the legend expands/collapses the pasture list
+- Selecting a pasture in the legend gives Pins and Paths options.
+  Pins shows only Flerd pins recorded in that pasture.
+  Paths shows only movement through that pasture.
+  Show All returns to the normal map.
+- New svgs for the cow and sheep icons
+- Past Path Lookup: Under “Last seen,” you can enter a date in MM/DD/YYYY format to display the Flerd pins and movement path from that specific day, with a Clear button to return to the normal map.
+
 
 ## Files
 
