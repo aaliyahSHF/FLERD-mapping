@@ -1,1506 +1,2304 @@
 /*
-  Flerd Pasture Tracker
+  ============================================================
+  FLERD PASTURE TRACKER
+  ============================================================
+
   Leaflet + GitHub Pages + Google Sheets/Apps Script.
 
   The map uses pixel coordinates from assets/SHF map.png:
     Map X = image column (0 -> 724)
     Map Y = image row    (0 -> 582)
+  
+   Map coordinates:
 
-*/
+      X = image column
+      Y = image row
+
+   Image:
+
+      724 x 582
+
+  Google Sheets is the source of truth for:
+
+      1. Location history
+      2. Pasture boundaries
+      
+/*
+
+
+
+/* ============================================================
+   CONFIGURATION
+============================================================ */
 
 const CONFIG = {
-  MAP_IMAGES: ["assets/SHF map.png", "SHF map.png"],
-  CSV_FILES: ["data/flerd-log.csv", "flerd-log.csv"],
 
-  // Paste your deployed Google Apps Script /exec URL here.
-  APPS_SCRIPT_URL: "",
+  MAP_IMAGE:
+    "SHF map.png",
 
-  COW_ICON: "cow.svg",
-  SHEEP_ICON: "sheep.svg",
+  MAP_WIDTH:
+    724,
 
-  DATA_YEAR: 2026,
-  IMAGE_WIDTH: 724,
-  IMAGE_HEIGHT: 582,
+  MAP_HEIGHT:
+    582,
 
-  PASTURE_FILL_OPACITY: 0.12,
-  PASTURE_WEIGHT: 2,
+  APPS_SCRIPT_URL:
+    "",
 
-  // Thin movement lines.
-  FULL_PATH_WEIGHT: 1.2,
-  FULL_PATH_OPACITY: 0.24,
+  COW_ICON:
+    "cow.svg",
 
-  SEVEN_DAY_PATH_WEIGHT: 2.2,
-  SEVEN_DAY_PATH_OPACITY: 0.88,
+  SHEEP_ICON:
+    "sheep.svg",
 
-  SYNC_INTERVAL_MS: 15000,
+  CSV_FILE:
+    "flerd-log.csv",
 
-  // Old rows without Map X/Y are shown at the pasture centroid.
-  SHOW_APPROXIMATE_OLD_POINTS: true
+  SYNC_INTERVAL:
+    15000
+
 };
 
-let map;
-let markerLayer = L.layerGroup();
-let pathLayer = L.layerGroup();
-let pastureLayer = L.layerGroup();
-let editingPastureLayer = L.layerGroup();
 
-let pastureLayers = [];
-let pastureVertexMarkers = [];
+/* ============================================================
+   GLOBAL STATE
+============================================================ */
+
+let map;
+
+let markerLayer;
+let pathLayer;
+let pastureLayer;
+let boundaryEditLayer;
+
+let allRecords = [];
+
+let pastureData = [];
+
+let pastureLocked = true;
+
+let recordingMode = false;
+
+let editMode = false;
+
+let boundaryEditMode = false;
+
+let selectedPoint = null;
+
+let editingRecord = null;
 
 let targetMarker = null;
 
-let allRecords = [];
-let selectedPoint = null;
-let editingRecord = null;
-
-let recordingMode = false;
-let editMode = false;
-let pastureEditMode = false;
+let lastLoggedRecord = null;
 
 let selectedPastureFilter = null;
-let selectedFilterType = null;
 
-// Historical date lookup. Format: YYYY-MM-DD.
-let selectedPastPathDate = null;
+let pastureLegendOpen = true;
 
-let pastureLegendOpen = false;
+let selectedPastPathStart = null;
+
+let selectedPastPathEnd = null;
+
+let selectedPastPathScope = "all";
+
+let syncTimer = null;
+
 let toastTimer = null;
-let refreshInProgress = false;
 
-let pastureData = [];
-let pastureEditBackup = null;
-let mapImageUrl = null;
 
-const $ = id => document.getElementById(id);
+/* ============================================================
+   HELPERS
+============================================================ */
+
+function $(id) {
+
+  return document.getElementById(id);
+
+}
+
 
 function esc(value) {
-  return String(value ?? "")
+
+  return String(
+    value ?? ""
+  )
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+
 }
 
-/* -------------------------------------------------------
-   STARTUP
-------------------------------------------------------- */
 
-async function start() {
-  pastureData = loadPasturesFromStorage() || deepCopyPastures(window.PASTURES || []);
+function deepCopy(value) {
 
-  initializeMap();
-  wireUi();
+  return JSON.parse(
+    JSON.stringify(value)
+  );
 
-  await loadMapImage();
-  drawPastures();
-  await refresh(true);
-
-  setInterval(() => refresh(false), CONFIG.SYNC_INTERVAL_MS);
 }
 
-function deepCopyPastures(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-/* -------------------------------------------------------
-   MAP
-------------------------------------------------------- */
-
-function initializeMap() {
-  map = L.map("map", {
-    crs: L.CRS.Simple,
-    minZoom: -2,
-    maxZoom: 4,
-    zoomControl: true,
-    attributionControl: false,
-    zoomSnap: 0.25
-  });
-
-  markerLayer.addTo(map);
-  pathLayer.addTo(map);
-  pastureLayer.addTo(map);
-  editingPastureLayer.addTo(map);
-
-  map.on("click", event => {
-    if (recordingMode) {
-      choosePoint(event.latlng);
-      $("recordPanel").classList.remove("hidden");
-    }
-  });
-}
-
-async function loadMapImage() {
-  for (const url of CONFIG.MAP_IMAGES) {
-    try {
-      const response = await fetch(url, { method: "HEAD", cache: "no-store" });
-      if (response.ok) {
-        mapImageUrl = url;
-        break;
-      }
-    } catch (_) {}
-  }
-
-  if (!mapImageUrl) {
-    mapImageUrl = CONFIG.MAP_IMAGES[0];
-  }
-
-  const bounds = [[0, 0], [CONFIG.IMAGE_HEIGHT, CONFIG.IMAGE_WIDTH]];
-
-  L.imageOverlay(mapImageUrl, bounds, {
-    opacity: 1,
-    interactive: false
-  }).addTo(map);
-
-  map.fitBounds(bounds);
-}
-
-/* -------------------------------------------------------
-   UI
-------------------------------------------------------- */
-
-function wireUi() {
-  $("recordBtn").addEventListener("click", () => {
-    setRecordingMode(!recordingMode);
-  });
-
-  $("editBtn").addEventListener("click", () => {
-    setEditMode(!editMode);
-  });
-
-  $("editPasturesBtn").addEventListener("click", () => {
-    setPastureEditMode(!pastureEditMode);
-  });
-
-  $("savePasturesBtn").addEventListener("click", savePastureBoundaries);
-
-  $("cancelPasturesBtn").addEventListener("click", () => {
-    restorePastures();
-    setPastureEditMode(false);
-    drawPastures();
-    showToast("Pasture changes cancelled.");
-  });
-
-  $("closeRecord").addEventListener("click", closeRecordPanel);
-  $("cancelRecord").addEventListener("click", closeRecordPanel);
-  $("saveRecord").addEventListener("click", saveLocation);
-
-  $("closeEdit").addEventListener("click", closeEditPanel);
-  $("cancelEditBtn").addEventListener("click", closeEditPanel);
-  $("saveEdit").addEventListener("click", saveEditedRecord);
-
-  $("pastureToggle").addEventListener("click", () => {
-    pastureLegendOpen = !pastureLegendOpen;
-    renderPastureLegend();
-  });
-
-  $("pastPathShow").addEventListener("click", showPastPathLookup);
-  $("pastPathClear").addEventListener("click", clearPastPathLookup);
-
-  $("pastPathDate").addEventListener("keydown", event => {
-    if (event.key === "Enter") showPastPathLookup();
-  });
-
-  $("pastPathDate").addEventListener("input", event => {
-    const digits = event.target.value.replace(/\D/g, "").slice(0, 8);
-    if (digits.length <= 2) {
-      event.target.value = digits;
-    } else if (digits.length <= 4) {
-      event.target.value = `${digits.slice(0, 2)}/${digits.slice(2)}`;
-    } else {
-      event.target.value =
-        `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-    }
-  });
-
-  $("pastureLegend").addEventListener("click", event => {
-    const button = event.target.closest("[data-pasture-filter]");
-    if (!button) return;
-
-    const id = button.dataset.pastureFilter;
-    const type = button.dataset.filterType;
-
-    if (type === "all") {
-      selectedPastureFilter = null;
-      selectedFilterType = null;
-    } else {
-      selectedPastureFilter = id;
-      selectedFilterType = type;
-    }
-
-    drawEverything();
-  });
-
-  $("recordPanel").addEventListener("click", event => {
-    if (event.target === $("recordPanel")) closeRecordPanel();
-  });
-
-  $("editPanel").addEventListener("click", event => {
-    if (event.target === $("editPanel")) closeEditPanel();
-  });
-
-  document.addEventListener("click", event => {
-    const button = event.target.closest("[data-edit-id]");
-    if (!button) return;
-
-    const record = findRecordById(button.dataset.editId);
-    if (record) startEditingRecord(record);
-  });
-}
-
-/* -------------------------------------------------------
-   RECORD MODE
-------------------------------------------------------- */
-
-function setRecordingMode(active) {
-  recordingMode = active;
-
-  if (active) {
-    setEditMode(false);
-    setPastureEditMode(false);
-
-    $("recordBtn").classList.add("recording");
-    $("recordBtn").textContent = "Tap map to place pin";
-
-    showToast("Tap the map where the Flerd is.");
-  } else {
-    $("recordBtn").classList.remove("recording");
-    $("recordBtn").textContent = "＋ Record location";
-
-    selectedPoint = null;
-
-    if (targetMarker) {
-      map.removeLayer(targetMarker);
-      targetMarker = null;
-    }
-
-    $("selectedLocation").classList.add("hidden");
-    $("saveRecord").disabled = true;
-    $("tapHint").textContent = "Tap the map to choose a location.";
-  }
-}
-
-function choosePoint(latlng) {
-  const x = Math.round(latlng.lng);
-  const y = Math.round(latlng.lat);
-
-  selectedPoint = {
-    x,
-    y,
-    pasture: pastureAt(x, y)
-  };
-
-  if (targetMarker) {
-    map.removeLayer(targetMarker);
-  }
-
-  targetMarker = L.marker([y, x], {
-    icon: L.divIcon({
-      className: "",
-      html: '<div class="record-target"></div>',
-      iconSize: [26, 26],
-      iconAnchor: [13, 13]
-    }),
-    zIndexOffset: 2000
-  }).addTo(map);
-
-  $("selectedLocation").classList.remove("hidden");
-  $("selectedLocation").innerHTML =
-    `<strong>Selected:</strong> X ${x}, Y ${y}` +
-    (selectedPoint.pasture
-      ? ` · <strong>Pasture ${esc(selectedPoint.pasture)}</strong>`
-      : " · Outside the defined pasture boundaries");
-
-  $("saveRecord").disabled = false;
-  $("tapHint").textContent = "Location selected. Add an optional note, then save.";
-}
-
-function closeRecordPanel() {
-  $("recordPanel").classList.add("hidden");
-
-  if ($("notes")) {
-    $("notes").value = "";
-  }
-
-  setRecordingMode(false);
-}
-
-/* -------------------------------------------------------
-   EDIT PIN MODE
-------------------------------------------------------- */
-
-function setEditMode(active) {
-  editMode = active;
-
-  $("editBtn").classList.toggle("active", active);
-  $("editBtn").textContent = active ? "✓ Editing pins" : "✎ Edit pins";
-
-  if (active) {
-    setRecordingMode(false);
-    setPastureEditMode(false);
-    showToast("Tap a pin to move or edit it.");
-  } else if (editingRecord) {
-    closeEditPanel();
-  }
-
-  drawMarkers();
-}
-
-function findRecordById(id) {
-  return allRecords.find(record => record.id === id) || null;
-}
-
-function startEditingRecord(record) {
-  if (!record.id) {
-    showToast("This record has no Google Sheet ID yet.");
-    return;
-  }
-
-  editingRecord = record;
-
-  selectedPoint = {
-    x: record.x,
-    y: record.y,
-    pasture: record.pasture
-  };
-
-  if (targetMarker) {
-    map.removeLayer(targetMarker);
-  }
-
-  targetMarker = L.marker([record.y, record.x], {
-    draggable: true,
-    icon: makeFlerdIcon(
-      record.sourceIndex,
-      isLastRecord(record),
-      record.approximate
-    ),
-    zIndexOffset: 2500
-  }).addTo(map);
-
-  targetMarker.bindPopup(
-    "Drag this pin to the accurate location."
-  ).openPopup();
-
-  targetMarker.on("drag", () => {
-    const p = targetMarker.getLatLng();
-
-    selectedPoint = {
-      x: Math.round(p.lng),
-      y: Math.round(p.lat),
-      pasture: pastureAt(
-        Math.round(p.lng),
-        Math.round(p.lat)
-      )
-    };
-
-    $("editSelectedLocation").textContent =
-      `X ${selectedPoint.x}, Y ${selectedPoint.y} · ` +
-      `Pasture ${selectedPoint.pasture || "outside boundary"}`;
-  });
-
-  $("editSelectedLocation").textContent =
-    `X ${record.x}, Y ${record.y} · Pasture ${record.pasture || "—"}`;
-
-  $("editDate").value = toDateInputValue(record);
-  $("editTime").value = toTimeInputValue(record);
-  $("editNotes").value = record.notes || "";
-
-  $("editPanel").classList.remove("hidden");
-}
-
-function closeEditPanel() {
-  $("editPanel").classList.add("hidden");
-
-  editingRecord = null;
-
-  if (targetMarker) {
-    map.removeLayer(targetMarker);
-    targetMarker = null;
-  }
-}
-
-async function saveEditedRecord() {
-  if (!editingRecord || !selectedPoint) return;
-
-  const row = {
-    ID: editingRecord.id,
-    Date: formatDateForSheet($("editDate").value) || editingRecord.date,
-    Time: formatTimeForSheet($("editTime").value) || editingRecord.time,
-    Pasture: selectedPoint.pasture || "",
-    "Map X": selectedPoint.x,
-    "Map Y": selectedPoint.y,
-    Notes: $("editNotes").value.trim()
-  };
-
-  $("saveEdit").disabled = true;
-  $("saveEdit").textContent = "Saving…";
-
-  try {
-    if (CONFIG.APPS_SCRIPT_URL) {
-      await submitToAppsScript(row);
-      showToast("Pin updated. Checking Google Sheets…");
-      closeEditPanel();
-      setEditMode(false);
-      setTimeout(() => refresh(true), 1200);
-    } else {
-      Object.assign(editingRecord, normalizeRow(row, editingRecord.sourceIndex));
-      closeEditPanel();
-      setEditMode(false);
-      drawEverything();
-      showToast("Pin updated locally. Add your Apps Script URL for Google Sheets sync.");
-    }
-  } catch (error) {
-    console.error(error);
-    showToast("Could not update the pin.");
-  } finally {
-    $("saveEdit").disabled = false;
-    $("saveEdit").textContent = "Save pin position";
-  }
-}
-
-/* -------------------------------------------------------
-   NEW LOCATION
-------------------------------------------------------- */
-
-function buildNewRow() {
-  const now = new Date();
-
-  return {
-    ID: "",
-    Date: `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`,
-    Time: now.toLocaleTimeString(undefined, {
-      hour: "numeric",
-      minute: "2-digit"
-    }),
-    Pasture: selectedPoint?.pasture || "",
-    "Map X": selectedPoint?.x ?? "",
-    "Map Y": selectedPoint?.y ?? "",
-    Notes: $("notes").value.trim()
-  };
-}
-
-async function saveLocation() {
-  if (!selectedPoint) return;
-
-  const row = buildNewRow();
-
-  $("saveRecord").disabled = true;
-  $("saveRecord").textContent = "Saving…";
-
-  try {
-    if (CONFIG.APPS_SCRIPT_URL) {
-      await submitToAppsScript(row);
-      closeRecordPanel();
-      showToast("Location sent to Google Sheets. Checking…");
-      setTimeout(() => refresh(true), 1200);
-    } else {
-      allRecords.push(normalizeRow(row, allRecords.length));
-      closeRecordPanel();
-      drawEverything();
-      showToast("Location saved locally. Add your Apps Script URL for Google Sheets sync.");
-    }
-  } catch (error) {
-    console.error(error);
-    showToast("Could not save the location.");
-  } finally {
-    $("saveRecord").disabled = false;
-    $("saveRecord").textContent = "Save location";
-  }
-}
-
-/* -------------------------------------------------------
-   GOOGLE SHEETS
-------------------------------------------------------- */
-
-function submitToAppsScript(row) {
-  if (!CONFIG.APPS_SCRIPT_URL) {
-    return Promise.reject(
-      new Error("Google Sheets URL is not configured.")
-    );
-  }
-
-  return new Promise(resolve => {
-    const frameName = "appsScriptSink";
-
-    let frame = document.getElementById(frameName);
-
-    if (!frame) {
-      frame = document.createElement("iframe");
-      frame.name = frameName;
-      frame.id = frameName;
-      frame.hidden = true;
-      document.body.appendChild(frame);
-    }
-
-    const form = document.createElement("form");
-
-    form.method = "POST";
-    form.action = CONFIG.APPS_SCRIPT_URL;
-    form.target = frameName;
-    form.hidden = true;
-
-    const input = document.createElement("input");
-
-    input.name = "payload";
-    input.value = JSON.stringify(row);
-
-    form.appendChild(input);
-    document.body.appendChild(form);
-
-    form.submit();
-    form.remove();
-
-    setTimeout(resolve, 900);
-  });
-}
-
-function loadFromAppsScript() {
-  return new Promise((resolve, reject) => {
-    const callback =
-      `flerdCallback_${Date.now()}_${Math.random()
-        .toString(36)
-        .slice(2)}`;
-
-    const script = document.createElement("script");
-
-    window[callback] = payload => {
-      cleanup();
-
-      if (!Array.isArray(payload)) {
-        reject(
-          new Error("Unexpected Google Sheets response.")
-        );
-        return;
-      }
-
-      resolve(
-        payload.map(
-          (row, i) =>
-            normalizeRow(row, i)
-        )
-      );
-    };
-
-    function cleanup() {
-      delete window[callback];
-      script.remove();
-    }
-
-    script.onerror = () => {
-      cleanup();
-      reject(
-        new Error("Could not reach Google Sheets.")
-      );
-    };
-
-    script.src =
-      `${CONFIG.APPS_SCRIPT_URL}` +
-      `?action=getLocations` +
-      `&callback=${encodeURIComponent(callback)}` +
-      `&t=${Date.now()}`;
-
-    document.body.appendChild(script);
-  });
-}
-
-/* -------------------------------------------------------
-   CSV
-------------------------------------------------------- */
-
-async function loadCsvRecords() {
-  for (const url of CONFIG.CSV_FILES) {
-    try {
-      const response =
-        await fetch(url, { cache: "no-store" });
-
-      if (!response.ok) continue;
-
-      const text = await response.text();
-
-      const parsed =
-        Papa.parse(
-          text.trim(),
-          {
-            header: true,
-            skipEmptyLines: true
-          }
-        );
-
-      return parsed.data.map(
-        (row, i) =>
-          normalizeRow(row, i)
-      );
-
-    } catch (error) {
-      console.warn(
-        `CSV load failed for ${url}`,
-        error
-      );
-    }
-  }
-
-  return [];
-}
-
-/* -------------------------------------------------------
-   LOAD / MERGE DATA
-------------------------------------------------------- */
-
-async function loadRecords() {
-  let googleRows = [];
-  let csvRows = [];
-
-  if (CONFIG.APPS_SCRIPT_URL) {
-    try {
-      googleRows =
-        await loadFromAppsScript();
-
-      $("syncStatus").textContent =
-        `Google Sheets synced · ${new Date().toLocaleTimeString(
-          [],
-          {
-            hour: "numeric",
-            minute: "2-digit"
-          }
-        )}`;
-    } catch (error) {
-      console.warn(error);
-
-      $("syncStatus").textContent =
-        "Google Sheets unavailable · using local data";
-    }
-  }
-
-  csvRows =
-    await loadCsvRecords();
-
-  /*
-    Google Sheet is preferred when both sources
-    contain the same record, but CSV-only rows
-    remain visible.
-  */
-
-  const merged = [];
-
-  for (const record of csvRows) {
-    merged.push(record);
-  }
-
-  for (const record of googleRows) {
-    const existingIndex =
-      merged.findIndex(
-        existing =>
-          (
-            record.id &&
-            existing.id &&
-            record.id === existing.id
-          ) ||
-
-          (
-            existing.date === record.date &&
-            existing.time === record.time &&
-            existing.pasture === record.pasture &&
-            existing.x === record.x &&
-            existing.y === record.y
-          )
-      );
-
-    if (existingIndex >= 0) {
-      merged[existingIndex] = record;
-    } else {
-      merged.push(record);
-    }
-  }
-
-  /*
-    If neither source worked, preserve whatever
-    is already on screen.
-  */
-
-  if (
-    googleRows.length === 0 &&
-    csvRows.length === 0 &&
-    allRecords.length > 0
-  ) {
-    return allRecords;
-  }
-
-  return merged;
-}
-
-function recordSignature(record) {
-  return [
-    record.id,
-    record.date,
-    record.time,
-    record.pasture,
-    record.x,
-    record.y,
-    record.notes,
-    record.updatedAt
-  ].join("~");
-}
-
-async function refresh(forceDraw = false) {
-  if (refreshInProgress) return;
-
-  refreshInProgress = true;
-
-  try {
-    const before =
-      allRecords
-        .map(recordSignature)
-        .join("|");
-
-    const next =
-      await loadRecords();
-
-    addApproximatePoints(next);
-
-    const after =
-      next
-        .map(recordSignature)
-        .join("|");
-
-    allRecords = next;
-
-    if (
-      forceDraw ||
-      before !== after
-    ) {
-      drawEverything();
-    }
-  } finally {
-    refreshInProgress = false;
-  }
-}
-
-/* -------------------------------------------------------
-   RECORD NORMALIZATION
-------------------------------------------------------- */
-
-function normalizeRow(row, sourceIndex) {
-  const x = Number(row["Map X"]);
-  const y = Number(row["Map Y"]);
-
-  const record = {
-    sourceIndex,
-    id: String(row.ID ?? "").trim(),
-    date: String(row.Date ?? "").trim(),
-    time: String(row.Time ?? "").trim(),
-    pasture: normalizePastureId(
-      String(row.Pasture ?? "").trim()
-    ),
-    x: Number.isFinite(x) ? x : null,
-    y: Number.isFinite(y) ? y : null,
-    notes: String(row.Notes ?? "").trim(),
-    updatedAt: String(row["Updated At"] ?? "").trim(),
-    approximate: false
-  };
-
-  record.dateTime =
-    parseDateTime(record);
-
-  return record;
-}
-
-function addApproximatePoints(records) {
-  if (!CONFIG.SHOW_APPROXIMATE_OLD_POINTS) {
-    return;
-  }
-
-  for (const record of records) {
-    if (
-      record.x !== null &&
-      record.y !== null
-    ) {
-      continue;
-    }
-
-    const center =
-      centroidForPasture(
-        record.pasture
-      );
-
-    if (!center) continue;
-
-    record.x = center[0];
-    record.y = center[1];
-    record.approximate = true;
-  }
-}
-
-/* -------------------------------------------------------
-   PASTURES
-------------------------------------------------------- */
 
 function normalizePastureId(id) {
+
   const value =
-    String(id ?? "").trim().toLowerCase();
+    String(id ?? "")
+      .trim()
+      .toLowerCase();
+
 
   if (
     value === "3a" ||
     value === "3b"
   ) {
+
     return "3";
+
   }
+
 
   return String(id ?? "").trim();
+
 }
 
-function pastureGroups() {
-  const groups = new Map();
 
-  for (const pasture of pastureData) {
-    const id =
-      normalizePastureId(pasture.id);
+/* ============================================================
+   START
+============================================================ */
 
-    if (!groups.has(id)) {
-      groups.set(id, []);
-    }
+async function start() {
 
-    groups.get(id).push(pasture);
-  }
+  initializeMap();
 
-  return groups;
-}
+  wireUI();
 
-function pastureAt(x, y) {
-  for (const pasture of pastureData) {
-    if (
-      pointInPolygon(
-        [x, y],
-        pasture.polygon
-      )
-    ) {
-      return normalizePastureId(
-        pasture.id
-      );
-    }
-  }
-
-  return "";
-}
-
-function centroidForPasture(id) {
-  const normalized =
-    normalizePastureId(id);
-
-  const group =
-    pastureGroups().get(
-      normalized
+  pastureData =
+    deepCopy(
+      window.DEFAULT_PASTURES || []
     );
 
-  if (!group || !group.length) {
-    return null;
-  }
 
-  /*
-    Use the first polygon's center,
-    except for grouped Pasture 3 where
-    averaging both polygon centers is better.
-  */
+  await loadPastures();
 
-  let totalX = 0;
-  let totalY = 0;
-  let count = 0;
+  drawPastures();
 
-  for (const pasture of group) {
-    for (const point of pasture.polygon) {
-      totalX += point[0];
-      totalY += point[1];
-      count++;
-    }
-  }
+  populatePastureSelectors();
 
-  if (!count) return null;
+  await refreshData(true);
 
-  return [
-    totalX / count,
-    totalY / count
-  ];
+  syncTimer =
+    setInterval(
+      () => refreshData(false),
+      CONFIG.SYNC_INTERVAL
+    );
+
 }
 
-function pointInPolygon(point, polygon) {
-  const [x, y] = point;
 
-  let inside = false;
+/* ============================================================
+   MAP
+============================================================ */
 
-  for (
-    let i = 0,
-    j = polygon.length - 1;
+function initializeMap() {
 
-    i < polygon.length;
+  map =
+    L.map(
+      "map",
+      {
+        crs:
+          L.CRS.Simple,
 
-    j = i++
+        minZoom:
+          -2,
+
+        maxZoom:
+          4,
+
+        zoomSnap:
+          0.25,
+
+        attributionControl:
+          false
+      }
+    );
+
+
+  markerLayer =
+    L.layerGroup()
+      .addTo(map);
+
+
+  pathLayer =
+    L.layerGroup()
+      .addTo(map);
+
+
+  pastureLayer =
+    L.layerGroup()
+      .addTo(map);
+
+
+  boundaryEditLayer =
+    L.layerGroup()
+      .addTo(map);
+
+
+  const bounds = [
+
+    [0, 0],
+
+    [
+      CONFIG.MAP_HEIGHT,
+      CONFIG.MAP_WIDTH
+    ]
+
+  ];
+
+
+  L.imageOverlay(
+    CONFIG.MAP_IMAGE,
+    bounds,
+    {
+      interactive:
+        false
+    }
+  ).addTo(map);
+
+
+  map.fitBounds(
+    bounds
+  );
+
+
+  map.on(
+    "click",
+    event => {
+
+      if (
+        recordingMode
+      ) {
+
+        choosePoint(
+          event.latlng
+        );
+
+      }
+
+    }
+  );
+
+}
+
+
+/* ============================================================
+   UI
+============================================================ */
+
+function wireUI() {
+
+  $("sidebarToggle")
+    .addEventListener(
+      "click",
+      toggleSidebar
+    );
+
+
+  $("sidebarClose")
+    .addEventListener(
+      "click",
+      closeSidebar
+    );
+
+
+  $("recordBtn")
+    .addEventListener(
+      "click",
+      () => {
+
+        setRecordingMode(
+          !recordingMode
+        );
+
+      }
+    );
+
+
+  $("editBtn")
+    .addEventListener(
+      "click",
+      () => {
+
+        setEditMode(
+          !editMode
+        );
+
+      }
+    );
+
+
+  $("closeRecord")
+    .addEventListener(
+      "click",
+      closeRecordPanel
+    );
+
+
+  $("cancelRecord")
+    .addEventListener(
+      "click",
+      closeRecordPanel
+    );
+
+
+  $("saveRecord")
+    .addEventListener(
+      "click",
+      saveLocation
+    );
+
+
+  $("closeEdit")
+    .addEventListener(
+      "click",
+      closeEditPanel
+    );
+
+
+  $("cancelEditBtn")
+    .addEventListener(
+      "click",
+      closeEditPanel
+    );
+
+
+  $("saveEdit")
+    .addEventListener(
+      "click",
+      saveEditedRecord
+    );
+
+
+  $("adminBtn")
+    .addEventListener(
+      "click",
+      openAdmin
+    );
+
+
+  $("closeAdmin")
+    .addEventListener(
+      "click",
+      closeAdmin
+    );
+
+
+  $("adminLoginBtn")
+    .addEventListener(
+      "click",
+      adminLogin
+    );
+
+
+  $("editBoundariesBtn")
+    .addEventListener(
+      "click",
+      beginBoundaryEditing
+    );
+
+
+  $("saveBoundariesBtn")
+    .addEventListener(
+      "click",
+      saveBoundaryChanges
+    );
+
+
+  $("cancelBoundaryEditBtn")
+    .addEventListener(
+      "click",
+      cancelBoundaryEditing
+    );
+
+
+  $("pastureToggle")
+    .addEventListener(
+      "click",
+      () => {
+
+        pastureLegendOpen =
+          !pastureLegendOpen;
+
+        renderPastureLegend();
+
+      }
+    );
+
+
+  $("pastPathShow")
+    .addEventListener(
+      "click",
+      showPastPath
+    );
+
+
+  $("pastPathClear")
+    .addEventListener(
+      "click",
+      clearPastPath
+    );
+
+
+  $("loggedEditBtn")
+    .addEventListener(
+      "click",
+      editLoggedRecord
+    );
+
+
+  document
+    .addEventListener(
+      "click",
+      event => {
+
+        const button =
+          event.target.closest(
+            "[data-edit-id]"
+          );
+
+
+        if (!button) {
+          return;
+        }
+
+
+        const record =
+          allRecords.find(
+            item =>
+              item.id ===
+              button.dataset.editId
+          );
+
+
+        if (record) {
+
+          startEditingRecord(
+            record
+          );
+
+        }
+
+      }
+    );
+
+}
+
+
+/* ============================================================
+   SIDEBAR
+============================================================ */
+
+function toggleSidebar() {
+
+  document.body
+    .classList.toggle(
+      "sidebar-collapsed"
+    );
+
+}
+
+
+function closeSidebar() {
+
+  document.body
+    .classList.add(
+      "sidebar-collapsed"
+    );
+
+}
+
+
+/* ============================================================
+   PASTURES FROM GOOGLE SHEETS
+============================================================ */
+
+async function loadPastures() {
+
+  if (
+    !CONFIG.APPS_SCRIPT_URL
   ) {
-    const xi = polygon[i][0];
-    const yi = polygon[i][1];
 
-    const xj = polygon[j][0];
-    const yj = polygon[j][1];
+    pastureLocked =
+      true;
 
-    const intersect =
-      ((yi > y) !== (yj > y)) &&
-      (
-        x <
-        ((xj - xi) *
-          (y - yi)) /
-          ((yj - yi) || 1e-9) +
-          xi
+    return;
+
+  }
+
+
+  try {
+
+    const result =
+      await loadAppsScript(
+        "getPastures"
       );
 
-    if (intersect) {
-      inside = !inside;
+
+    if (
+      result &&
+      result.exists &&
+      Array.isArray(
+        result.pastures
+      ) &&
+      result.pastures.length
+    ) {
+
+      pastureData =
+        result.pastures;
+
+      pastureLocked =
+        Boolean(
+          result.locked
+        );
+
     }
+
+  } catch (error) {
+
+    console.warn(
+      "Pasture sync failed",
+      error
+    );
+
   }
 
-  return inside;
 }
 
-/* -------------------------------------------------------
-   DRAW PASTURES
-------------------------------------------------------- */
+
+/* ============================================================
+   PASTURE DRAWING
+============================================================ */
+
+function pastureGroups() {
+
+  const groups =
+    new Map();
+
+
+  pastureData.forEach(
+    pasture => {
+
+      const groupId =
+        pasture.group ||
+        pasture.id;
+
+
+      const id =
+        String(groupId);
+
+
+      if (
+        !groups.has(id)
+      ) {
+
+        groups.set(
+          id,
+          []
+        );
+
+      }
+
+
+      groups
+        .get(id)
+        .push(pasture);
+
+    }
+  );
+
+
+  return groups;
+
+}
+
 
 function drawPastures() {
-  pastureLayer.clearLayers();
-  pastureLayers = [];
 
-  for (const pasture of pastureData) {
-    const normalizedId =
-      normalizePastureId(
-        pasture.id
+  pastureLayer.clearLayers();
+
+  boundaryEditLayer.clearLayers();
+
+
+  pastureData.forEach(
+    pasture => {
+
+      const groupId =
+        pasture.group ||
+        pasture.id;
+
+
+      const selected =
+        selectedPastureFilter &&
+        normalizePastureId(
+          selectedPastureFilter
+        ) ===
+        normalizePastureId(
+          groupId
+        );
+
+
+      const polygon =
+        L.polygon(
+          pasture.polygon.map(
+            ([x, y]) =>
+              [y, x]
+          ),
+          {
+
+            color:
+              "#111",
+
+            weight:
+              selected
+                ? 4
+                : 2,
+
+            opacity:
+              selected
+                ? 1
+                : 0.8,
+
+            fillColor:
+              pasture.color,
+
+            fillOpacity:
+              selected
+                ? 0.3
+                : 0.12,
+
+            interactive:
+              true
+
+          }
+        );
+
+
+      /*
+        Hovering over the pasture displays
+        its name.
+      */
+
+      polygon.bindTooltip(
+        pasture.name,
+        {
+          sticky:
+            true,
+
+          direction:
+            "center",
+
+          className:
+            "pasture-tooltip"
+        }
       );
 
-    const selected =
-      selectedPastureFilter &&
-      normalizePastureId(
-        selectedPastureFilter
-      ) === normalizedId;
 
-    const layer =
-      L.polygon(
-        pasture.polygon.map(
-          ([x, y]) => [y, x]
-        ),
-        {
-          color: "#111",
-          weight: selected
-            ? 4
-            : CONFIG.PASTURE_WEIGHT,
-          opacity: selected
-            ? 1
-            : 0.8,
-          fillColor:
-            pasture.color,
-          fillOpacity:
-            selected
-              ? 0.25
-              : (
-                selectedPastureFilter
-                  ? 0.035
-                  : CONFIG.PASTURE_FILL_OPACITY
-              ),
-          interactive: false
+      polygon.on(
+        "mouseover",
+        () => {
+
+          polygon.setStyle({
+            weight: 4,
+            fillOpacity: 0.28
+          });
+
         }
-      ).addTo(
+      );
+
+
+      polygon.on(
+        "mouseout",
+        () => {
+
+          polygon.setStyle({
+
+            weight:
+              selected
+                ? 4
+                : 2,
+
+            fillOpacity:
+              selected
+                ? 0.3
+                : 0.12
+
+          });
+
+        }
+      );
+
+
+      polygon.on(
+        "click",
+        event => {
+
+          L.DomEvent.stopPropagation(
+            event
+          );
+
+
+          selectedPastureFilter =
+            normalizePastureId(
+              groupId
+            );
+
+
+          renderPastureLegend();
+
+          drawEverything();
+
+        }
+      );
+
+
+      polygon.addTo(
         pastureLayer
       );
 
-    layer.pastureId =
-      normalizedId;
+    }
+  );
 
-    pastureLayers.push(layer);
-  }
 
   renderPastureLegend();
+
 }
 
-/* -------------------------------------------------------
-   PASTURE DROPDOWN
-------------------------------------------------------- */
+
+/* ============================================================
+   PASTURE LEGEND
+============================================================ */
 
 function renderPastureLegend() {
+
   const list =
     $("pastureLegend");
 
-  if (!pastureLegendOpen) {
-    list.classList.add("collapsed");
-    list.innerHTML =
-      `<div class="pasture-collapsed-hint">
-        Click Pastures to choose a pasture
-      </div>`;
+
+  const chevron =
+    $("pastureChevron");
+
+
+  if (
+    !pastureLegendOpen
+  ) {
+
+    list.classList.add(
+      "collapsed"
+    );
+
+    chevron.textContent =
+      "▶";
+
     return;
+
   }
 
-  list.classList.remove("collapsed");
+
+  list.classList.remove(
+    "collapsed"
+  );
+
+  chevron.textContent =
+    "▼";
+
 
   const groups =
     pastureGroups();
 
-  let html = `
+
+  let html = "";
+
+
+  html += `
     <button
       type="button"
-      class="pasture-show-all"
-      data-pasture-filter=""
-      data-filter-type="all">
-      Show All
+      class="pasture-option ${
+        !selectedPastureFilter
+          ? "selected"
+          : ""
+      }"
+      data-pasture-filter="all">
+      <span class="pasture-color all-color"></span>
+      Total property
     </button>
   `;
 
-  for (const [id, group] of groups) {
-    const color =
-      group[0].color || "#777";
 
-    const selected =
-      normalizePastureId(
-        selectedPastureFilter
-      ) === id;
+  groups.forEach(
+    (group, id) => {
 
-    html += `
-      <div class="pasture-item ${
-        selected
-          ? "selected"
-          : ""
-      }">
+      const color =
+        group[0].color ||
+        "#777";
 
-        <div class="pasture-item-title">
+
+      const selected =
+        selectedPastureFilter &&
+        normalizePastureId(
+          selectedPastureFilter
+        ) ===
+        normalizePastureId(id);
+
+
+      html += `
+        <button
+          type="button"
+          class="pasture-option ${
+            selected
+              ? "selected"
+              : ""
+          }"
+          data-pasture-filter="${esc(id)}">
+
           <span
-            class="pasture-swatch"
+            class="pasture-color"
             style="background:${esc(color)}">
           </span>
 
-          <strong>
-            Pasture ${esc(id)}
-          </strong>
-        </div>
+          ${esc(
+            group[0].group
+              ? `Pasture ${id}`
+              : group[0].name
+          )}
 
-        <div class="pasture-filter-buttons">
+        </button>
+      `;
 
-          <button
-            type="button"
-            data-pasture-filter="${esc(id)}"
-            data-filter-type="pins">
-            Pins
-          </button>
-
-          <button
-            type="button"
-            data-pasture-filter="${esc(id)}"
-            data-filter-type="paths">
-            Paths
-          </button>
-
-        </div>
-
-      </div>
-    `;
-  }
-
-  list.innerHTML = html;
-}
-
-/* -------------------------------------------------------
-   PASTURE FILTER PATHS
-------------------------------------------------------- */
-
-function pastureGroupPolygons(id) {
-  const normalized =
-    normalizePastureId(id);
-
-  return pastureData
-    .filter(
-      pasture =>
-        normalizePastureId(
-          pasture.id
-        ) === normalized
-    )
-    .map(
-      pasture =>
-        pasture.polygon
-    );
-}
-
-function segmentTouchesPasture(
-  a,
-  b,
-  pastureId
-) {
-  const polygons =
-    pastureGroupPolygons(
-      pastureId
-    );
-
-  if (!polygons.length) {
-    return false;
-  }
-
-  for (const polygon of polygons) {
-    if (
-      pointInPolygon(
-        a,
-        polygon
-      ) ||
-      pointInPolygon(
-        b,
-        polygon
-      )
-    ) {
-      return true;
     }
-
-    for (
-      let i = 0;
-      i < polygon.length;
-      i++
-    ) {
-      const edgeA =
-        polygon[i];
-
-      const edgeB =
-        polygon[
-          (i + 1) %
-          polygon.length
-        ];
-
-      if (
-        segmentsIntersect(
-          a,
-          b,
-          edgeA,
-          edgeB
-        )
-      ) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-function orientation(a, b, c) {
-  const value =
-    (b[1] - a[1]) *
-      (c[0] - b[0]) -
-    (b[0] - a[0]) *
-      (c[1] - b[1]);
-
-  if (Math.abs(value) < 1e-9) {
-    return 0;
-  }
-
-  return value > 0 ? 1 : 2;
-}
-
-function onSegment(a, b, c) {
-  return (
-    b[0] <=
-      Math.max(a[0], c[0]) &&
-    b[0] >=
-      Math.min(a[0], c[0]) &&
-    b[1] <=
-      Math.max(a[1], c[1]) &&
-    b[1] >=
-      Math.min(a[1], c[1])
   );
-}
 
-function segmentsIntersect(
-  p1,
-  q1,
-  p2,
-  q2
-) {
-  const o1 =
-    orientation(p1, q1, p2);
 
-  const o2 =
-    orientation(p1, q1, q2);
+  list.innerHTML =
+    html;
 
-  const o3 =
-    orientation(p2, q2, p1);
 
-  const o4 =
-    orientation(p2, q2, q1);
+  list
+    .querySelectorAll(
+      "[data-pasture-filter]"
+    )
+    .forEach(
+      button => {
 
-  if (
-    o1 !== o2 &&
-    o3 !== o4
-  ) {
-    return true;
-  }
+        button.addEventListener(
+          "click",
+          () => {
 
-  if (
-    o1 === 0 &&
-    onSegment(p1, p2, q1)
-  ) return true;
+            const value =
+              button.dataset
+                .pastureFilter;
 
-  if (
-    o2 === 0 &&
-    onSegment(p1, q2, q1)
-  ) return true;
 
-  if (
-    o3 === 0 &&
-    onSegment(p2, p1, q2)
-  ) return true;
+            if (
+              value === "all"
+            ) {
 
-  if (
-    o4 === 0 &&
-    onSegment(p2, q1, q2)
-  ) return true;
+              selectedPastureFilter =
+                null;
 
-  return false;
-}
+            } else {
 
-/* -------------------------------------------------------
-   DRAW PATHS
-------------------------------------------------------- */
+              selectedPastureFilter =
+                value;
 
-function drawPaths(records) {
-  pathLayer.clearLayers();
+            }
 
-  if (selectedPastPathDate) {
-    const dayRecords = records.filter(
-      record =>
-        dateKeyFromRecord(record) === selectedPastPathDate &&
-        record.x !== null &&
-        record.y !== null
+
+            drawEverything();
+
+          }
+        );
+
+      }
     );
 
-    if (dayRecords.length >= 2) {
-      L.polyline(
-        dayRecords.map(record => [record.y, record.x]),
-        {
-          color: "#111",
-          weight: 2.2,
-          opacity: 0.92,
-          lineJoin: "round",
-          lineCap: "round"
-        }
-      ).addTo(pathLayer);
-    }
+}
 
-    return;
-  }
 
-  if (records.length < 2) {
-    return;
-  }
+/* ============================================================
+   RECORDING A NEW LOCATION
+============================================================ */
 
-  if (
-    selectedFilterType === "paths" &&
-    selectedPastureFilter
-  ) {
-    const id =
-      normalizePastureId(
-        selectedPastureFilter
+function setRecordingMode(
+  active
+) {
+
+  recordingMode =
+    active;
+
+
+  if (active) {
+
+    setEditMode(
+      false
+    );
+
+
+    $("recordBtn")
+      .classList.add(
+        "recording"
       );
 
-    for (
-      let i = 1;
-      i < records.length;
-      i++
-    ) {
-      const previous =
-        records[i - 1];
 
-      const current =
-        records[i];
+    $("recordBtn")
+      .textContent =
+      "Click map to place pin";
 
-      if (
-        previous.x === null ||
-        previous.y === null ||
-        current.x === null ||
-        current.y === null
-      ) {
-        continue;
+
+    showToast(
+      "Click where the Flerd is located."
+    );
+
+
+  } else {
+
+    $("recordBtn")
+      .classList.remove(
+        "recording"
+      );
+
+
+    $("recordBtn")
+      .textContent =
+      "＋ Record location";
+
+
+    clearTargetMarker();
+
+  }
+
+}
+
+
+/* ============================================================
+   CHOOSE MAP LOCATION
+============================================================ */
+
+function choosePoint(
+  latlng
+) {
+
+  const x =
+    Math.round(
+      latlng.lng
+    );
+
+
+  const y =
+    Math.round(
+      latlng.lat
+    );
+
+
+  selectedPoint = {
+
+    x: x,
+
+    y: y,
+
+    pasture:
+      pastureAt(
+        x,
+        y
+      )
+
+  };
+
+
+  clearTargetMarker();
+
+
+  targetMarker =
+    L.circleMarker(
+      [y, x],
+      {
+
+        radius:
+          8,
+
+        color:
+          "#111",
+
+        fillColor:
+          "#fff",
+
+        fillOpacity:
+          1,
+
+        weight:
+          3
+
       }
+    )
+      .addTo(map);
 
-      if (
-        segmentTouchesPasture(
-          [previous.x, previous.y],
-          [current.x, current.y],
-          id
+
+  $("selectedLocation")
+    .classList.remove(
+      "hidden"
+    );
+
+
+  $("selectedLocation")
+    .innerHTML = `
+
+      <strong>Location selected</strong>
+
+      <br>
+
+      X:
+      ${x}
+
+      ·
+
+      Y:
+      ${y}
+
+      <br>
+
+      Pasture:
+      ${
+        esc(
+          selectedPoint.pasture ||
+          "Outside of set pasture parameters"
         )
-      ) {
-        L.polyline(
-          [
-            [
-              previous.y,
-              previous.x
-            ],
-            [
-              current.y,
-              current.x
-            ]
-          ],
-          {
-            color: "#111",
-            weight:
-              CONFIG.SEVEN_DAY_PATH_WEIGHT,
-            opacity:
-              CONFIG.SEVEN_DAY_PATH_OPACITY,
-            lineJoin: "round",
-            lineCap: "round"
-          }
-        ).addTo(
-          pathLayer
-        );
       }
+
+    `;
+
+
+  $("recordPanel")
+    .classList.remove(
+      "hidden"
+    );
+
+
+  $("saveRecord")
+    .disabled =
+    false;
+
+
+  $("tapHint")
+    .textContent =
+    "Add an optional note, then save the location.";
+
+
+  $("notes")
+    .focus();
+
+}
+
+
+/* ============================================================
+   SAVE LOCATION
+============================================================ */
+
+async function saveLocation() {
+
+  if (
+    !selectedPoint
+  ) {
+    return;
+  }
+
+
+  const now =
+    new Date();
+
+
+  const row = {
+
+    action:
+      "saveLocation",
+
+    Date:
+      formatDateForSheet(
+        now
+      ),
+
+    Time:
+      formatTimeForSheet(
+        now
+      ),
+
+    Pasture:
+      selectedPoint.pasture ||
+      "",
+
+    "Map X":
+      selectedPoint.x,
+
+    "Map Y":
+      selectedPoint.y,
+
+    Notes:
+      $("notes")
+        .value
+        .trim(),
+
+    ID:
+      ""
+
+  };
+
+
+  $("saveRecord")
+    .disabled =
+    true;
+
+
+  $("saveRecord")
+    .textContent =
+    "Saving…";
+
+
+  try {
+
+    const response =
+      await submitToAppsScript(
+        row
+      );
+
+
+    /*
+      Immediately constructs the local record so the
+      pin appears without waiting for the next poll.
+    */
+
+    const localRecord =
+      normalizeRow(
+        {
+          ...row,
+          ID:
+            response.id ||
+            `local-${Date.now()}`,
+          "Updated At":
+            new Date()
+              .toISOString()
+        },
+        allRecords.length
+      );
+
+
+    allRecords.push(
+      localRecord
+    );
+
+
+    closeRecordPanel();
+
+
+    drawEverything();
+
+
+    showLoggedStar(
+      localRecord
+    );
+
+
+    /*
+      Re-reads Google Sheets shortly after saving.
+    */
+
+    setTimeout(
+      () => refreshData(true),
+      1000
+    );
+
+
+  } catch (error) {
+
+    console.error(
+      error
+    );
+
+
+    showToast(
+      "The location could not be saved."
+    );
+
+  } finally {
+
+    $("saveRecord")
+      .disabled =
+      false;
+
+    $("saveRecord")
+      .textContent =
+      "Save location";
+
+  }
+
+}
+
+
+/* ============================================================
+   LOGGED STAR
+============================================================ */
+
+function showLoggedStar(
+  record
+) {
+
+  lastLoggedRecord =
+    record;
+
+
+  const star =
+    $("loggedStar");
+
+
+  $("loggedSummary")
+    .innerHTML = `
+
+      <strong>
+        ${esc(
+          formatDate(
+            record.dateTime
+          )
+        )}
+      </strong>
+
+      <br>
+
+      ${esc(
+        formatTime(
+          record.dateTime,
+          record.time
+        )
+      )}
+
+      <br>
+
+      ${
+        record.pasture
+          ? `Pasture ${esc(record.pasture)}`
+          : "Outside pasture"
+      }
+
+      ${
+        record.notes
+          ? `<br><span>${esc(record.notes)}</span>`
+          : ""
+      }
+
+    `;
+
+
+  star.classList.remove(
+    "hidden"
+  );
+
+
+  clearTimeout(
+    star._timer
+  );
+
+
+  star._timer =
+    setTimeout(
+      () => {
+
+        star.classList.add(
+          "hidden"
+        );
+
+      },
+      5000
+    );
+
+}
+
+
+function editLoggedRecord() {
+
+  if (
+    !lastLoggedRecord
+  ) {
+    return;
+  }
+
+
+  $("loggedStar")
+    .classList.add(
+      "hidden"
+    );
+
+
+  startEditingRecord(
+    lastLoggedRecord
+  );
+
+}
+
+
+/* ============================================================
+   RECORD PANEL
+============================================================ */
+
+function closeRecordPanel() {
+
+  $("recordPanel")
+    .classList.add(
+      "hidden"
+    );
+
+
+  $("notes")
+    .value =
+    "";
+
+
+  selectedPoint =
+    null;
+
+
+  clearTargetMarker();
+
+
+  setRecordingMode(
+    false
+  );
+
+}
+
+
+function clearTargetMarker() {
+
+  if (
+    targetMarker
+  ) {
+
+    map.removeLayer(
+      targetMarker
+    );
+
+    targetMarker =
+      null;
+
+  }
+
+}
+
+
+/* ============================================================
+   EDIT MODE
+============================================================ */
+
+function setEditMode(
+  active
+) {
+
+  editMode =
+    active;
+
+
+  $("editBtn")
+    .classList.toggle(
+      "active",
+      active
+    );
+
+
+  $("editBtn")
+    .textContent =
+    active
+      ? "✓ Editing pins"
+      : "✎ Edit pins";
+
+
+  if (active) {
+
+    setRecordingMode(
+      false
+    );
+
+
+    showToast(
+      "Click an existing pin to edit it."
+    );
+
+  }
+
+
+  drawMarkers();
+
+}
+
+
+/* ============================================================
+   START EDITING RECORD
+============================================================ */
+
+function startEditingRecord(
+  record
+) {
+
+  if (
+    !record.id
+  ) {
+
+    showToast(
+      "This location doesn't have an ID."
+    );
+
+    return;
+
+  }
+
+
+  editingRecord =
+    record;
+
+
+  selectedPoint = {
+
+    x:
+      record.x,
+
+    y:
+      record.y,
+
+    pasture:
+      record.pasture
+
+  };
+
+
+  clearTargetMarker();
+
+
+  targetMarker =
+    L.marker(
+      [
+        record.y,
+        record.x
+      ],
+      {
+        draggable:
+          true,
+
+        icon:
+          makeFlerdIcon(
+            record
+          ),
+
+        zIndexOffset:
+          2000
+      }
+    )
+      .addTo(map);
+
+
+  targetMarker.on(
+    "drag",
+    () => {
+
+      const point =
+        targetMarker
+          .getLatLng();
+
+
+      selectedPoint = {
+
+        x:
+          Math.round(
+            point.lng
+          ),
+
+        y:
+          Math.round(
+            point.lat
+          ),
+
+        pasture:
+          pastureAt(
+            Math.round(
+              point.lng
+            ),
+            Math.round(
+              point.lat
+            )
+          )
+
+      };
+
+
+      updateEditLocationText();
+
+    }
+  );
+
+
+  $("editDate")
+    .value =
+    toDateInputValue(
+      record
+    );
+
+
+  $("editTime")
+    .value =
+    toTimeInputValue(
+      record
+    );
+
+
+  $("editNotes")
+    .value =
+    record.notes ||
+    "";
+
+
+  updateEditLocationText();
+
+
+  $("editPanel")
+    .classList.remove(
+      "hidden"
+    );
+
+}
+
+
+function updateEditLocationText() {
+
+  $("editSelectedLocation")
+    .innerHTML = `
+
+      <strong>Location</strong>
+
+      <br>
+
+      X:
+      ${selectedPoint.x}
+
+      ·
+
+      Y:
+      ${selectedPoint.y}
+
+      <br>
+
+      Pasture:
+      ${
+        esc(
+          selectedPoint.pasture ||
+          "Outside pasture"
+        )
+      }
+
+    `;
+
+}
+
+
+function closeEditPanel() {
+
+  $("editPanel")
+    .classList.add(
+      "hidden"
+    );
+
+
+  editingRecord =
+    null;
+
+
+  clearTargetMarker();
+
+}
+
+
+/* ============================================================
+   SAVE EDITED RECORD
+============================================================ */
+
+async function saveEditedRecord() {
+
+  if (
+    !editingRecord ||
+    !selectedPoint
+  ) {
+    return;
+  }
+
+
+  const row = {
+
+    action:
+      "saveLocation",
+
+    ID:
+      editingRecord.id,
+
+    Date:
+      formatDateForSheet(
+        fromDateInput(
+          $("editDate").value
+        )
+      ),
+
+    Time:
+      formatTimeInputForSheet(
+        $("editTime").value
+      ),
+
+    Pasture:
+      selectedPoint.pasture ||
+      "",
+
+    "Map X":
+      selectedPoint.x,
+
+    "Map Y":
+      selectedPoint.y,
+
+    Notes:
+      $("editNotes")
+        .value
+        .trim()
+
+  };
+
+
+  $("saveEdit")
+    .disabled =
+    true;
+
+
+  $("saveEdit")
+    .textContent =
+    "Saving…";
+
+
+  try {
+
+    const response =
+      await submitToAppsScript(
+        row
+      );
+
+
+    Object.assign(
+      editingRecord,
+      normalizeRow(
+        {
+          ...row,
+          ID:
+            response.id ||
+            editingRecord.id,
+          "Updated At":
+            new Date()
+              .toISOString()
+        },
+        editingRecord.sourceIndex
+      )
+    );
+
+
+    closeEditPanel();
+
+    drawEverything();
+
+
+    showToast(
+      "Location updated :) "
+    );
+
+
+    setTimeout(
+      () => refreshData(true),
+      800
+    );
+
+
+  } catch (error) {
+
+    console.error(
+      error
+    );
+
+
+    showToast(
+      "Could not update the location...try again"
+    );
+
+  } finally {
+
+    $("saveEdit")
+      .disabled =
+      false;
+
+    $("saveEdit")
+      .textContent =
+      "Save changes";
+
+  }
+
+}
+
+
+/* ============================================================
+   GOOGLE APPS SCRIPT COMMUNICATION
+============================================================ */
+
+function submitToAppsScript(
+  payload
+) {
+
+  if (
+    !CONFIG.APPS_SCRIPT_URL
+  ) {
+
+    /*
+      Development fallback. (4 sync)
+
+    */
+
+    return Promise.resolve({
+      ok: true,
+      id:
+        payload.ID ||
+        `local-${Date.now()}`
+    });
+
+  }
+
+
+  return new Promise(
+    (resolve, reject) => {
+
+      const frameName =
+        "flerdAppsScriptFrame";
+
+
+      let frame =
+        document.getElementById(
+          frameName
+        );
+
+
+      if (!frame) {
+
+        frame =
+          document.createElement(
+            "iframe"
+          );
+
+        frame.id =
+          frameName;
+
+        frame.name =
+          frameName;
+
+        frame.hidden =
+          true;
+
+        document.body.appendChild(
+          frame
+        );
+
+      }
+
+
+      const form =
+        document.createElement(
+          "form"
+        );
+
+
+      form.method =
+        "POST";
+
+      form.action =
+        CONFIG.APPS_SCRIPT_URL;
+
+      form.target =
+        frameName;
+
+      form.hidden =
+        true;
+
+
+      const input =
+        document.createElement(
+          "input"
+        );
+
+
+      input.name =
+        "payload";
+
+      input.value =
+        JSON.stringify(
+          payload
+        );
+
+
+      form.appendChild(
+        input
+      );
+
+
+      document.body.appendChild(
+        form
+      );
+
+
+      form.submit();
+
+      form.remove();
+
+
+      /*
+        Apps Script POST requests do not expose their response
+        cross-origin to the page, so the app verifies the write
+        by polling Google Sheets afterward.
+      */
+
+      setTimeout(
+        () => {
+
+          resolve({
+            ok: true,
+            id:
+              payload.ID ||
+              null
+          });
+
+        },
+        700
+      );
+
+    }
+  );
+
+}
+
+
+function loadAppsScript(
+  action
+) {
+
+  return new Promise(
+    (resolve, reject) => {
+
+      if (
+        !CONFIG.APPS_SCRIPT_URL
+      ) {
+
+        reject(
+          new Error(
+            "Error! (Apps Script) "
+          )
+          /* Apps Script URL not configured. 
+          */
+        );
+      
+
+        return;
+
+      }
+
+
+      const callback =
+        `flerdCallback_${Date.now()}_${Math.random()
+          .toString(36)
+          .slice(2)}`;
+
+
+      const script =
+        document.createElement(
+          "script"
+        );
+
+
+      function cleanup() {
+
+        delete window[
+          callback
+        ];
+
+        script.remove();
+
+      }
+
+
+      window[
+        callback
+      ] = payload => {
+
+        cleanup();
+
+        resolve(
+          payload
+        );
+
+      };
+
+
+      script.onerror =
+        () => {
+
+          cleanup();
+
+          reject(
+            new Error(
+              "Error! (Google sheets) "
+            )
+            /* Google Sheets request failed
+            */
+          );
+
+        };
+
+
+      script.src =
+        `${CONFIG.APPS_SCRIPT_URL}` +
+        `?action=${encodeURIComponent(action)}` +
+        `&callback=${encodeURIComponent(callback)}` +
+        `&t=${Date.now()}`;
+
+
+      document.body.appendChild(
+        script
+      );
+
+    }
+  );
+
+}
+
+
+/* ============================================================
+   DATA REFRESH
+============================================================ */
+
+async function refreshData(
+  force
+) {
+
+  try {
+
+    let googleRecords =
+      [];
+
+
+    if (
+      CONFIG.APPS_SCRIPT_URL
+    ) {
+
+      googleRecords =
+        await loadAppsScript(
+          "getLocations"
+        );
+
     }
 
-    return;
-  }
 
-  const valid =
-    records.filter(
-      record =>
-        record.x !== null &&
-        record.y !== null
+    /*
+      Only use the CSV when Google Sheets is not configured.
+
+      Once Sheets is connected, Sheets is the source of truth.
+    */
+
+    if (
+      !CONFIG.APPS_SCRIPT_URL
+    ) {
+
+      googleRecords =
+        await loadCsv();
+
+    }
+
+
+    const normalized =
+      googleRecords.map(
+        (row, index) =>
+          normalizeRow(
+            row,
+            index
+          )
+      );
+
+
+    const changed =
+      recordSignature(
+        normalized
+      ) !==
+      recordSignature(
+        allRecords
+      );
+
+
+    allRecords =
+      normalized;
+
+
+    updateSyncStatus(
+      true
     );
 
-  const allPoints =
-    valid.map(
+
+    if (
+      force ||
+      changed
+    ) {
+
+      drawEverything();
+
+    }
+
+  } catch (error) {
+
+    console.warn(
+      error
+    );
+
+
+    updateSyncStatus(
+      false
+    );
+
+  }
+
+}
+
+
+/* ============================================================
+   CSV FALLBACK
+============================================================ */
+
+async function loadCsv() {
+
+  try {
+
+    const response =
+      await fetch(
+        CONFIG.CSV_FILE,
+        {
+          cache:
+            "no-store"
+        }
+      );
+
+
+    if (
+      !response.ok
+    ) {
+
+      return [];
+
+    }
+
+
+    const text =
+      await response.text();
+
+
+    const parsed =
+      Papa.parse(
+        text.trim(),
+        {
+          header:
+            true,
+
+          skipEmptyLines:
+            true
+        }
+      );
+
+
+    return parsed.data;
+
+  } catch (_) {
+
+    return [];
+
+  }
+
+}
+
+
+/* ============================================================
+   NORMALIZE DATA
+============================================================ */
+
+function normalizeRow(
+  row,
+  sourceIndex
+) {
+
+  const x =
+    Number(
+      row["Map X"]
+    );
+
+
+  const y =
+    Number(
+      row["Map Y"]
+    );
+
+
+  const record = {
+
+    sourceIndex,
+
+    id:
+      String(
+        row.ID ??
+        ""
+      ).trim(),
+
+    date:
+      String(
+        row.Date ??
+        ""
+      ).trim(),
+
+    time:
+      String(
+        row.Time ??
+        ""
+      ).trim(),
+
+    pasture:
+      String(
+        row.Pasture ??
+        ""
+      ).trim(),
+
+    x:
+      Number.isFinite(x)
+        ? x
+        : null,
+
+    y:
+      Number.isFinite(y)
+        ? y
+        : null,
+
+    notes:
+      String(
+        row.Notes ??
+        ""
+      ).trim(),
+
+    updatedAt:
+      String(
+        row["Updated At"] ??
+        ""
+      ).trim()
+
+  };
+
+
+  record.dateTime =
+    parseDateTime(
+      record
+    );
+
+
+  return record;
+
+}
+
+
+function recordSignature(
+  records
+) {
+
+  return records
+    .map(
       record =>
         [
+          record.id,
+          record.date,
+          record.time,
+          record.pasture,
+          record.x,
           record.y,
-          record.x
-        ]
-    );
-
-  if (allPoints.length >= 2) {
-    L.polyline(
-      allPoints,
-      {
-        color: "#111",
-        weight:
-          CONFIG.FULL_PATH_WEIGHT,
-        opacity:
-          CONFIG.FULL_PATH_OPACITY,
-        dashArray: "4 6",
-        lineJoin: "round",
-        lineCap: "round"
-      }
-    ).addTo(
-      pathLayer
-    );
-  }
-
-  const last =
-    valid[valid.length - 1];
-
-  if (!last || !last.dateTime) {
-    return;
-  }
-
-  const cutoff =
-    new Date(
-      last.dateTime.getTime() -
-      7 * 24 * 60 * 60 * 1000
-    );
-
-  const recent =
-    valid.filter(
-      record =>
-        record.dateTime &&
-        record.dateTime >= cutoff
-    );
-
-  if (recent.length >= 2) {
-    L.polyline(
-      recent.map(
-        record =>
-          [
-            record.y,
-            record.x
-          ]
-      ),
-      {
-        color: "#111",
-        weight:
-          CONFIG.SEVEN_DAY_PATH_WEIGHT,
-        opacity:
-          CONFIG.SEVEN_DAY_PATH_OPACITY,
-        lineJoin: "round",
-        lineCap: "round"
-      }
-    ).addTo(
-      pathLayer
-    );
-  }
-}
-
-/* -------------------------------------------------------
-   DRAW MARKERS
-------------------------------------------------------- */
-
-function sortedRecords() {
-  return allRecords
-    .filter(
-      record =>
-        record.dateTime
+          record.notes,
+          record.updatedAt
+        ].join("|")
     )
-    .sort(
-      (a, b) =>
-        a.dateTime - b.dateTime
-    );
+    .join("||");
+
 }
 
-function isLastRecord(record) {
+
+/* ============================================================
+   DRAW EVERYTHING
+============================================================ */
+
+function drawEverything() {
+
+  drawPastures();
+
+  drawPaths(
+    sortedRecords()
+  );
+
+  drawMarkers();
+
+  updateStatus();
+
+}
+
+
+/* ============================================================
+   MARKERS
+============================================================ */
+
+function drawMarkers() {
+
+  markerLayer.clearLayers();
+
+
   const records =
     sortedRecords();
 
-  return (
-    records.length > 0 &&
-    records[records.length - 1] ===
-      record
-  );
-}
-
-function drawMarkers() {
-  markerLayer.clearLayers();
-
-  let records =
-    sortedRecords();
-
-  if (selectedPastPathDate) {
-    records = records.filter(
-      record =>
-        dateKeyFromRecord(record) === selectedPastPathDate
-    );
-  }
-
-  if (
-    selectedFilterType === "pins" &&
-    selectedPastureFilter
-  ) {
-    records =
-      records.filter(
-        record =>
-          normalizePastureId(
-            record.pasture ||
-            pastureAt(
-              record.x,
-              record.y
-            )
-          ) ===
-          normalizePastureId(
-            selectedPastureFilter
-          )
-      );
-  }
 
   records.forEach(
-    (record, index) => {
+    record => {
+
       if (
         record.x === null ||
         record.y === null
       ) {
         return;
       }
+
+
+      if (
+        selectedPastureFilter &&
+        normalizePastureId(
+          record.pasture ||
+          pastureAt(
+            record.x,
+            record.y
+          )
+        ) !==
+        normalizePastureId(
+          selectedPastureFilter
+        )
+      ) {
+
+        return;
+
+      }
+
 
       const marker =
         L.marker(
@@ -1511,399 +2309,1286 @@ function drawMarkers() {
           {
             icon:
               makeFlerdIcon(
-                record.sourceIndex,
-                isLastRecord(record),
-                record.approximate
+                record
               ),
-            zIndexOffset:
-              isLastRecord(record)
-                ? 1000
-                : index
-          }
-        ).addTo(
-          markerLayer
-        );
 
-      marker.recordId =
-        record.id;
+            zIndexOffset:
+              isLastRecord(
+                record
+              )
+                ? 1000
+                : 0
+          }
+        )
+          .addTo(
+            markerLayer
+          );
+
 
       marker.bindPopup(
-        recordPopup(record)
+        recordPopup(
+          record
+        )
       );
+
+
+      /*
+        IMPORTANT:
+
+        Clicking a pin does NOT remove it.
+
+        It remains exactly where it was logged.
+      */
 
       marker.on(
         "click",
         () => {
-          if (
-            editMode &&
-            record.id
-          ) {
-            startEditingRecord(
-              record
-            );
-          }
+
+          marker.openPopup();
+
         }
       );
+
     }
   );
+
 }
 
-function makeFlerdIcon(
-  index,
-  isLast,
-  approximate = false
-) {
-  const kind =
-    index % 2 === 0
-      ? "cow"
-      : "sheep";
 
-  const size =
-    isLast ? 42 : 32;
+/* ============================================================
+   PIN ICON
+============================================================ */
+
+function makeFlerdIcon(
+  record
+) {
+
+  const latest =
+    isLastRecord(
+      record
+    );
+
 
   const iconUrl =
-    kind === "cow"
+    record.sourceIndex % 2 === 0
       ? CONFIG.COW_ICON
       : CONFIG.SHEEP_ICON;
 
-  const cls =
-    [
-      "flerd-marker",
-      isLast
-        ? "last-seen"
-        : "",
-      approximate
-        ? "approximate-marker"
-        : ""
-    ]
-      .filter(Boolean)
-      .join(" ");
+
+  const size =
+    latest
+      ? 42
+      : 34;
+
 
   return L.divIcon({
-    className: "",
-    html:
-      `<div class="${cls}" title="${kind}">
-        <img src="${esc(iconUrl)}" alt="${kind}">
-      </div>`,
-    iconSize: [size, size],
-    iconAnchor: [
-      size / 2,
-      size / 2
-    ],
-    popupAnchor: [
-      0,
-      -size / 2
-    ]
+
+    className:
+      "flerd-marker",
+
+    html: `
+
+      <div
+        class="${
+          latest
+            ? "flerd-marker-inner latest"
+            : "flerd-marker-inner"
+        }">
+
+        <img
+          src="${esc(iconUrl)}"
+          alt="Flerd location">
+
+      </div>
+
+    `,
+
+    iconSize:
+      [
+        size,
+        size
+      ],
+
+    iconAnchor:
+      [
+        size / 2,
+        size / 2
+      ]
+
   });
+
 }
 
-function recordPopup(record) {
-  const approximate =
-    record.approximate
-      ? `<div class="popup-note">
-          <strong>Approximate:</strong>
-          This older row had no Map X/Y,
-          so it is shown near the pasture center.
-        </div>`
-      : "";
 
-  const edit =
-    record.id
-      ? `<button
-          class="popup-edit-btn"
-          data-edit-id="${esc(record.id)}">
-          Move / edit pin
-        </button>`
-      : `<div class="popup-note">
-          This record does not have a stable ID yet.
-        </div>`;
+/* ============================================================
+   POPUP
+============================================================ */
+
+function recordPopup(
+  record
+) {
 
   return `
-    <div class="popup-content">
+
+    <div class="location-popup">
+
       <strong>
-        ${esc(formatDate(record.dateTime))}
+        ${esc(
+          formatDate(
+            record.dateTime
+          )
+        )}
       </strong>
+
       <br>
+
       ${esc(
         formatTime(
           record.dateTime,
           record.time
         )
       )}
-      · Pasture
-      ${esc(
-        record.pasture ||
-        pastureAt(
-          record.x,
-          record.y
-        ) ||
-        "—"
-      )}
+
+      <br>
+
+      <span>
+        ${
+          record.pasture
+            ? `Pasture ${esc(record.pasture)}`
+            : "Outside pasture"
+        }
+      </span>
 
       ${
         record.notes
-          ? `<div class="popup-notes">
+          ? `
+            <div class="popup-notes">
               ${esc(record.notes)}
-             </div>`
+            </div>
+          `
           : ""
       }
 
-      ${approximate}
-      ${edit}
+      ${
+        record.id
+          ? `
+            <button
+              class="popup-edit-btn"
+              data-edit-id="${esc(record.id)}">
+              Edit this location
+            </button>
+          `
+          : ""
+      }
+
     </div>
+
   `;
+
 }
 
-/* -------------------------------------------------------
-   EVERYTHING
-------------------------------------------------------- */
 
-function drawEverything() {
-  drawPastures();
+/* ============================================================
+   PATHS
+============================================================ */
 
-  const records =
-    sortedRecords();
+function drawPaths(
+  records
+) {
 
-  drawPaths(records);
-  drawMarkers();
-  updateStatusText(records);
-}
+  pathLayer.clearLayers();
 
-/* -------------------------------------------------------
-   STATUS
-------------------------------------------------------- */
 
-function updateStatusText(records) {
-  if (selectedPastPathDate) {
-    const dayRecords = records.filter(
-      record =>
-        dateKeyFromRecord(record) === selectedPastPathDate
+  if (
+    selectedPastPathStart &&
+    selectedPastPathEnd
+  ) {
+
+    drawDateRangePath(
+      records
     );
 
-    if (!dayRecords.length) {
-      $("lastSeenText").textContent =
-        "No location found for the selected date.";
-      $("sevenDayText").textContent =
-        "Past Path Lookup is active.";
-      return;
-    }
+    return;
 
-    const first = dayRecords[0];
-    const last = dayRecords[dayRecords.length - 1];
+  }
 
-    $("lastSeenText").innerHTML =
-      `<strong>Past Path Lookup:</strong> ${esc(
-        formatDate(last.dateTime)
-      )} · ${dayRecords.length} location${
-        dayRecords.length === 1 ? "" : "s"
-      }`;
 
-    $("sevenDayText").textContent =
-      dayRecords.length === 1
-        ? `One documented location at ${formatTime(last.dateTime, last.time)}.`
-        : `Path from ${formatTime(first.dateTime, first.time)} to ${formatTime(last.dateTime, last.time)}.`;
+  /*
+    Normal map:
+    shows the most recent seven days.
+  */
 
+  if (
+    records.length < 2
+  ) {
     return;
   }
 
-  if (!records.length) {
-    $("lastSeenText").textContent =
-      "No location yet";
 
-    $("sevenDayText").textContent =
-      "No recent locations yet";
+  const newest =
+    records[
+      records.length - 1
+    ];
 
+
+  if (
+    !newest.dateTime
+  ) {
     return;
   }
 
-  const last =
-    records[records.length - 1];
-
-  $("lastSeenText").innerHTML =
-    `${esc(formatDate(last.dateTime))}
-     · ${esc(formatTime(last.dateTime, last.time))}
-     · Pasture
-     ${esc(
-       last.pasture ||
-       pastureAt(
-         last.x,
-         last.y
-       ) ||
-       "—"
-     )}` +
-    (
-      last.approximate
-        ? " (approx.)"
-        : ""
-    );
 
   const cutoff =
     new Date(
-      last.dateTime.getTime() -
-      7 * 24 * 60 * 60 * 1000
+      newest.dateTime.getTime() -
+      7 *
+      24 *
+      60 *
+      60 *
+      1000
     );
+
 
   const recent =
     records.filter(
       record =>
         record.dateTime &&
-        record.dateTime >= cutoff
+        record.dateTime >= cutoff &&
+        record.x !== null &&
+        record.y !== null
     );
 
-  $("sevenDayText").textContent =
-    `${recent.length} documented location${
-      recent.length === 1
-        ? ""
-        : "s"
-    } in the last 7 days`;
+
+  drawPolylineSegments(
+    recent,
+    "recent"
+  );
+
 }
 
 
-/* -------------------------------------------------------
-   PAST PATH LOOKUP
-------------------------------------------------------- */
+function drawDateRangePath(
+  records
+) {
 
-function parseLookupDate(value) {
-  const match = String(value || "")
-    .trim()
-    .match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const filtered =
+    records.filter(
+      record =>
 
-  if (!match) return null;
+        recordIsInRange(
+          record
+        ) &&
 
-  const month = Number(match[1]);
-  const day = Number(match[2]);
-  const year = Number(match[3]);
+        record.x !== null &&
+        record.y !== null
 
-  const date = new Date(year, month - 1, day);
+    );
+
 
   if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
+    filtered.length < 2
   ) {
-    return null;
-  }
 
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-function dateKeyFromRecord(record) {
-  if (!record.dateTime) return null;
-
-  return `${record.dateTime.getFullYear()}-` +
-    `${String(record.dateTime.getMonth() + 1).padStart(2, "0")}-` +
-    `${String(record.dateTime.getDate()).padStart(2, "0")}`;
-}
-
-function showPastPathLookup() {
-  const input = $("pastPathDate");
-  const status = $("pastPathStatus");
-  const key = parseLookupDate(input.value);
-
-  if (!key) {
-    selectedPastPathDate = null;
-    status.textContent = "Enter a valid date as MM/DD/YYYY.";
-    drawEverything();
     return;
+
   }
 
-  const matching = sortedRecords().filter(
-    record =>
-      dateKeyFromRecord(record) === key &&
-      record.x !== null &&
-      record.y !== null
-  );
 
-  if (!matching.length) {
-    selectedPastPathDate = null;
-    status.textContent =
-      `No Flerd locations were found for ${input.value}.`;
-    drawEverything();
-    return;
-  }
+  if (
+    selectedPastPathScope ===
+    "all"
+  ) {
 
-  selectedPastPathDate = key;
-
-  const labelDate = new Date(
-    Number(key.slice(0, 4)),
-    Number(key.slice(5, 7)) - 1,
-    Number(key.slice(8, 10))
-  );
-
-  status.innerHTML =
-    `<span class="past-path-active">Viewing ${esc(
-      labelDate.toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-        year: "numeric"
-      })
-    )}</span> · ${matching.length} location${matching.length === 1 ? "" : "s"}`;
-
-  drawEverything();
-  showToast(`Showing Flerd movement for ${input.value}.`);
-}
-
-function clearPastPathLookup() {
-  selectedPastPathDate = null;
-  $("pastPathDate").value = "";
-  $("pastPathStatus").textContent = "";
-  drawEverything();
-  showToast("Returned to the normal map.");
-}
-
-/* -------------------------------------------------------
-   PASTURE EDITING
-------------------------------------------------------- */
-
-function setPastureEditMode(active) {
-  pastureEditMode = active;
-
-  if (active) {
-    pastureEditBackup = deepCopyPastures(pastureData);
-    setRecordingMode(false);
-    setEditMode(false);
-
-    $("editPasturesBtn")
-      .classList.add("active");
-
-    $("editPasturesBtn").textContent =
-      "✓ Editing pastures";
-
-    $("savePasturesBtn")
-      .classList.remove("hidden");
-
-    $("cancelPasturesBtn")
-      .classList.remove("hidden");
-
-    showToast(
-      "Drag the pasture boundary points."
+    drawPolylineSegments(
+      filtered,
+      "range"
     );
 
-    createPastureVertexMarkers();
-  } else {
-    $("editPasturesBtn")
-      .classList.remove("active");
+    return;
 
-    $("editPasturesBtn").textContent =
-      "Edit pasture boundaries";
-
-    $("savePasturesBtn")
-      .classList.add("hidden");
-
-    $("cancelPasturesBtn")
-      .classList.add("hidden");
-
-    clearPastureVertexMarkers();
   }
+
+
+  for (
+    let i = 1;
+    i < filtered.length;
+    i++
+  ) {
+
+    const previous =
+      filtered[i - 1];
+
+    const current =
+      filtered[i];
+
+
+    if (
+      segmentTouchesPasture(
+        [
+          previous.x,
+          previous.y
+        ],
+        [
+          current.x,
+          current.y
+        ],
+        selectedPastPathScope
+      )
+    ) {
+
+      L.polyline(
+        [
+          [
+            previous.y,
+            previous.x
+          ],
+          [
+            current.y,
+            current.x
+          ]
+        ],
+        {
+
+          color:
+            "#111",
+
+          weight:
+            4,
+
+          opacity:
+            0.9,
+
+          lineJoin:
+            "round",
+
+          lineCap:
+            "round"
+
+        }
+      ).addTo(
+        pathLayer
+      );
+
+    }
+
+  }
+
 }
 
-function createPastureVertexMarkers() {
-  clearPastureVertexMarkers();
+
+function drawPolylineSegments(
+  records,
+  type
+) {
+
+  if (
+    records.length < 2
+  ) {
+    return;
+  }
+
+
+  L.polyline(
+    records.map(
+      record =>
+        [
+          record.y,
+          record.x
+        ]
+    ),
+    {
+
+      color:
+        "#111",
+
+      weight:
+        type === "range"
+          ? 4
+          : 3,
+
+      opacity:
+        type === "range"
+          ? 0.9
+          : 0.65,
+
+      lineJoin:
+        "round",
+
+      lineCap:
+        "round"
+
+    }
+  ).addTo(
+    pathLayer
+  );
+
+}
+
+
+/* ============================================================
+   PASTURE GEOMETRY
+============================================================ */
+
+function pastureAt(
+  x,
+  y
+) {
+
+  for (
+    const pasture of pastureData
+  ) {
+
+    if (
+      pointInPolygon(
+        [x, y],
+        pasture.polygon
+      )
+    ) {
+
+      return normalizePastureId(
+        pasture.group ||
+        pasture.id
+      );
+
+    }
+
+  }
+
+
+  return "";
+
+}
+
+
+function pointInPolygon(
+  point,
+  polygon
+) {
+
+  const [
+    x,
+    y
+  ] = point;
+
+
+  let inside =
+    false;
+
+
+  for (
+    let i = 0,
+    j = polygon.length - 1;
+
+    i < polygon.length;
+
+    j = i++
+  ) {
+
+    const xi =
+      polygon[i][0];
+
+    const yi =
+      polygon[i][1];
+
+
+    const xj =
+      polygon[j][0];
+
+    const yj =
+      polygon[j][1];
+
+
+    const intersects =
+      (
+        (yi > y) !==
+        (yj > y)
+      ) &&
+      (
+        x <
+        (
+          (xj - xi) *
+          (y - yi)
+        ) /
+        (
+          (yj - yi) ||
+          1e-9
+        ) +
+        xi
+      );
+
+
+    if (
+      intersects
+    ) {
+
+      inside =
+        !inside;
+
+    }
+
+  }
+
+
+  return inside;
+
+}
+
+
+function pasturePolygons(
+  id
+) {
+
+  const normalized =
+    normalizePastureId(
+      id
+    );
+
+
+  return pastureData
+    .filter(
+      pasture =>
+        normalizePastureId(
+          pasture.group ||
+          pasture.id
+        ) === normalized
+    )
+    .map(
+      pasture =>
+        pasture.polygon
+    );
+
+}
+
+
+function segmentTouchesPasture(
+  a,
+  b,
+  id
+) {
+
+  const polygons =
+    pasturePolygons(
+      id
+    );
+
+
+  for (
+    const polygon of polygons
+  ) {
+
+    if (
+      pointInPolygon(
+        a,
+        polygon
+      ) ||
+      pointInPolygon(
+        b,
+        polygon
+      )
+    ) {
+
+      return true;
+
+    }
+
+
+    for (
+      let i = 0;
+      i < polygon.length;
+      i++
+    ) {
+
+      const p1 =
+        polygon[i];
+
+      const p2 =
+        polygon[
+          (i + 1) %
+          polygon.length
+        ];
+
+
+      if (
+        segmentsIntersect(
+          a,
+          b,
+          p1,
+          p2
+        )
+      ) {
+
+        return true;
+
+      }
+
+    }
+
+  }
+
+
+  return false;
+
+}
+
+
+function orientation(
+  a,
+  b,
+  c
+) {
+
+  const value =
+    (
+      b[1] - a[1]
+    ) *
+    (
+      c[0] - b[0]
+    ) -
+    (
+      b[0] - a[0]
+    ) *
+    (
+      c[1] - b[1]
+    );
+
+
+  if (
+    Math.abs(
+      value
+    ) < 1e-9
+  ) {
+
+    return 0;
+
+  }
+
+
+  return value > 0
+    ? 1
+    : 2;
+
+}
+
+
+function onSegment(
+  a,
+  b,
+  c
+) {
+
+  return (
+
+    b[0] <=
+      Math.max(
+        a[0],
+        c[0]
+      ) &&
+
+    b[0] >=
+      Math.min(
+        a[0],
+        c[0]
+      ) &&
+
+    b[1] <=
+      Math.max(
+        a[1],
+        c[1]
+      ) &&
+
+    b[1] >=
+      Math.min(
+        a[1],
+        c[1]
+      )
+
+  );
+
+}
+
+
+function segmentsIntersect(
+  p1,
+  q1,
+  p2,
+  q2
+) {
+
+  const o1 =
+    orientation(
+      p1,
+      q1,
+      p2
+    );
+
+
+  const o2 =
+    orientation(
+      p1,
+      q1,
+      q2
+    );
+
+
+  const o3 =
+    orientation(
+      p2,
+      q2,
+      p1
+    );
+
+
+  const o4 =
+    orientation(
+      p2,
+      q2,
+      q1
+    );
+
+
+  if (
+    o1 !== o2 &&
+    o3 !== o4
+  ) {
+
+    return true;
+
+  }
+
+
+  if (
+    o1 === 0 &&
+    onSegment(
+      p1,
+      p2,
+      q1
+    )
+  ) {
+
+    return true;
+
+  }
+
+
+  if (
+    o2 === 0 &&
+    onSegment(
+      p1,
+      q2,
+      q1
+    )
+  ) {
+
+    return true;
+
+  }
+
+
+  if (
+    o3 === 0 &&
+    onSegment(
+      p2,
+      p1,
+      q2
+    )
+  ) {
+
+    return true;
+
+  }
+
+
+  if (
+    o4 === 0 &&
+    onSegment(
+      p2,
+      q1,
+      q2
+    )
+  ) {
+
+    return true;
+
+  }
+
+
+  return false;
+
+}
+
+
+/* ============================================================
+   DATE RANGE
+============================================================ */
+
+function populatePastureSelectors() {
+
+  const select =
+    $("pastPathScope");
+
+
+  select.innerHTML =
+    `
+      <option value="all">
+        Total property
+      </option>
+    `;
+
+
+  pastureGroups()
+    .forEach(
+      (group, id) => {
+
+        const option =
+          document.createElement(
+            "option"
+          );
+
+
+        option.value =
+          id;
+
+
+        option.textContent =
+          `Pasture ${id}`;
+
+
+        select.appendChild(
+          option
+        );
+
+      }
+    );
+
+}
+
+
+function showPastPath() {
+
+  const start =
+    $("pastPathStart")
+      .value;
+
+
+  const end =
+    $("pastPathEnd")
+      .value;
+
+
+  if (
+    !start ||
+    !end
+  ) {
+
+    $("pastPathStatus")
+      .textContent =
+      "Please choose both dates.";
+
+    return;
+
+  }
+
+
+  if (
+    start > end
+  ) {
+
+    $("pastPathStatus")
+      .textContent =
+      "The start date must be before the end date.";
+
+    return;
+
+  }
+
+
+  selectedPastPathStart =
+    start;
+
+
+  selectedPastPathEnd =
+    end;
+
+
+  selectedPastPathScope =
+    $("pastPathScope")
+      .value;
+
+
+  const count =
+    sortedRecords()
+      .filter(
+        record =>
+
+          recordIsInRange(
+            record
+          ) &&
+
+          (
+            selectedPastPathScope ===
+            "all" ||
+
+            normalizePastureId(
+              record.pasture ||
+              pastureAt(
+                record.x,
+                record.y
+              )
+            ) ===
+            normalizePastureId(
+              selectedPastPathScope
+            )
+          )
+      )
+      .length;
+
+
+  $("pastPathStatus")
+    .textContent =
+    `${count} location${count === 1 ? "" : "s"} found.`;
+
+
+  drawEverything();
+
+}
+
+
+function clearPastPath() {
+
+  selectedPastPathStart =
+    null;
+
+  selectedPastPathEnd =
+    null;
+
+  selectedPastPathScope =
+    "all";
+
+
+  $("pastPathStart")
+    .value =
+    "";
+
+  $("pastPathEnd")
+    .value =
+    "";
+
+  $("pastPathScope")
+    .value =
+    "all";
+
+
+  $("pastPathStatus")
+    .textContent =
+    "";
+
+
+  drawEverything();
+
+}
+
+
+function recordIsInRange(
+  record
+) {
+
+  if (
+    !record.dateTime ||
+    !selectedPastPathStart ||
+    !selectedPastPathEnd
+  ) {
+
+    return false;
+
+  }
+
+
+  const key =
+    dateKey(
+      record.dateTime
+    );
+
+
+  return (
+    key >=
+    selectedPastPathStart &&
+    key <=
+    selectedPastPathEnd
+  );
+
+}
+
+
+/* ============================================================
+   STATUS
+============================================================ */
+
+function updateStatus() {
+
+  const records =
+    sortedRecords();
+
+
+  if (
+    !records.length
+  ) {
+
+    $("lastSeenText")
+      .textContent =
+      "No location yet";
+
+    return;
+
+  }
+
+
+  const last =
+    records[
+      records.length - 1
+    ];
+
+
+  $("lastSeenText")
+    .innerHTML = `
+
+      <strong>
+        ${esc(
+          formatDate(
+            last.dateTime
+          )
+        )}
+      </strong>
+
+      <br>
+
+      ${esc(
+        formatTime(
+          last.dateTime,
+          last.time
+        )
+      )}
+
+      <br>
+
+      ${
+        last.pasture
+          ? `Pasture ${esc(last.pasture)}`
+          : "Outside pasture"
+      }
+
+    `;
+
+}
+
+
+function updateSyncStatus(
+  success
+) {
+
+  const now =
+    new Date();
+
+
+  if (success) {
+
+    $("syncStatus")
+      .textContent =
+      `Synced · ${now.toLocaleTimeString(
+        [],
+        {
+          hour:
+            "numeric",
+
+          minute:
+            "2-digit"
+        }
+      )}`;
+
+
+    $("syncDetail")
+      .textContent =
+      "Google Sheets synched";
+
+  } else {
+
+    $("syncStatus")
+      .textContent =
+      "Sync unavailable";
+
+
+    $("syncDetail")
+      .textContent =
+      "Could not sync with Google Sheets";
+
+  }
+
+}
+
+
+/* ============================================================
+   ADMIN
+============================================================ */
+
+let administratorKey =
+  null;
+
+
+function openAdmin() {
+
+  $("adminPanel")
+    .classList.remove(
+      "hidden"
+    );
+
+
+  if (
+    administratorKey
+  ) {
+
+    showAdminControls();
+
+  } else {
+
+    $("adminLogin")
+      .classList.remove(
+        "hidden"
+      );
+
+    $("adminControls")
+      .classList.add(
+        "hidden"
+      );
+
+  }
+
+}
+
+
+function closeAdmin() {
+
+  $("adminPanel")
+    .classList.add(
+      "hidden"
+    );
+
+}
+
+
+function adminLogin() {
+
+  const key =
+    $("adminKey")
+      .value
+      .trim();
+
+
+  if (!key) {
+
+    showToast(
+      "Enter the administrator key."
+    );
+
+    return;
+
+  }
+
+
+  /*
+    The key is not validated until a boundary save.
+
+    The Apps Script validates it against Script Properties.
+  */
+
+  administratorKey =
+    key;
+
+
+  showAdminControls();
+
+
+  $("boundaryStatus")
+    .textContent =
+    pastureLocked
+      ? "Boundaries are currently LOCKED."
+      : "Boundaries are currently unlocked.";
+
+}
+
+
+function showAdminControls() {
+
+  $("adminLogin")
+    .classList.add(
+      "hidden"
+    );
+
+
+  $("adminControls")
+    .classList.remove(
+      "hidden"
+    );
+
+
+  $("boundaryStatus")
+    .textContent =
+    pastureLocked
+      ? "Boundaries are locked."
+      : "Boundaries are unlocked.";
+
+}
+
+
+/* ============================================================
+   BOUNDARY EDITING
+============================================================ */
+
+function beginBoundaryEditing() {
+
+  if (
+    !administratorKey
+  ) {
+
+    showToast(
+      "Admin access required."
+    );
+
+    return;
+
+  }
+
+
+  boundaryEditMode =
+    true;
+
+
+  $("editBoundariesBtn")
+    .classList.add(
+      "hidden"
+    );
+
+
+  $("saveBoundariesBtn")
+    .classList.remove(
+      "hidden"
+    );
+
+
+  $("cancelBoundaryEditBtn")
+    .classList.remove(
+      "hidden"
+    );
+
+
+  boundaryEditLayer
+    .clearLayers();
+
 
   pastureData.forEach(
     (pasture, pastureIndex) => {
+
       pasture.polygon.forEach(
         (point, pointIndex) => {
+
           const marker =
             L.marker(
               [
@@ -1911,209 +3596,427 @@ function createPastureVertexMarkers() {
                 point[0]
               ],
               {
-                draggable: true,
-                icon: L.divIcon({
-                  className:
-                    "pasture-vertex-icon",
-                  html:
-                    `<div></div>`,
-                  iconSize:
-                    [16, 16],
-                  iconAnchor:
-                    [8, 8]
-                }),
-                zIndexOffset: 3000
+
+                draggable:
+                  true,
+
+                icon:
+                  L.divIcon({
+
+                    className:
+                      "boundary-handle",
+
+                    html:
+                      `<div></div>`,
+
+                    iconSize:
+                      [
+                        18,
+                        18
+                      ],
+
+                    iconAnchor:
+                      [
+                        9,
+                        9
+                      ]
+
+                  }),
+
+                zIndexOffset:
+                  3000
+
               }
-            ).addTo(
-              editingPastureLayer
             );
+
+
+          marker.bindTooltip(
+            pasture.name,
+            {
+              direction:
+                "top"
+            }
+          );
+
 
           marker.on(
             "drag",
-            event => {
-              const p =
-                event.target
-                  .getLatLng();
+            () => {
+
+              const position =
+                marker.getLatLng();
+
 
               pastureData[
                 pastureIndex
               ].polygon[
                 pointIndex
               ] = [
-                Math.round(p.lng),
-                Math.round(p.lat)
+
+                Math.round(
+                  position.lng
+                ),
+
+                Math.round(
+                  position.lat
+                )
+
               ];
 
-              drawPastureEditOverlay();
+
+              drawPasturePreview();
+
             }
           );
 
-          pastureVertexMarkers.push(
-            marker
+
+          marker.addTo(
+            boundaryEditLayer
           );
+
         }
       );
+
     }
   );
 
-  drawPastureEditOverlay();
+
+  drawPasturePreview();
+
+
+  $("boundaryStatus")
+    .textContent =
+    "Editing boundaries. Drag/adjust the points.";
+
 }
 
-function drawPastureEditOverlay() {
-  editingPastureLayer
-    .eachLayer(
-      layer => {
-        if (
-          !pastureVertexMarkers.includes(
-            layer
-          )
-        ) {
-          editingPastureLayer
-            .removeLayer(layer);
-        }
-      }
-    );
+
+function drawPasturePreview() {
+
+  pastureLayer.clearLayers();
+
 
   pastureData.forEach(
     pasture => {
+
       L.polygon(
         pasture.polygon.map(
-          ([x, y]) => [y, x]
+          ([x, y]) =>
+            [y, x]
         ),
         {
-          color: "#111",
-          weight: 3,
-          dashArray: "6 4",
-          fillOpacity: 0,
-          interactive: false
+
+          color:
+            "#111",
+
+          weight:
+            3,
+
+          fillColor:
+            pasture.color,
+
+          fillOpacity:
+            0.2
+
         }
       ).addTo(
-        editingPastureLayer
+        pastureLayer
       );
+
     }
   );
+
 }
 
-function clearPastureVertexMarkers() {
-  editingPastureLayer.clearLayers();
-  pastureVertexMarkers = [];
-}
 
-function savePastureBoundaries() {
-  localStorage.setItem(
-    "flerdPastures",
-    JSON.stringify(
-      pastureData
-    )
-  );
+async function saveBoundaryChanges() {
 
-  pastureEditBackup = null;
+  if (
+    !administratorKey
+  ) {
 
-  drawPastures();
+    return;
 
-  setPastureEditMode(false);
-
-  showToast(
-    "Pasture boundaries saved on this device."
-  );
-}
-
-function restorePastures() {
-  if (pastureEditBackup) {
-    pastureData =
-      deepCopyPastures(
-        pastureEditBackup
-      );
-  } else {
-    pastureData =
-      deepCopyPastures(
-        window.PASTURES || []
-      );
   }
 
-  pastureEditBackup = null;
+
+  $("saveBoundariesBtn")
+    .disabled =
+    true;
+
+
+  $("saveBoundariesBtn")
+    .textContent =
+    "Saving…";
+
+
+  try {
+
+    await submitToAppsScript({
+
+      action:
+        "savePastures",
+
+      adminKey:
+        administratorKey,
+
+      pastures:
+        pastureData
+
+    });
+
+
+    /*
+      Verify by reading the configuration back.
+    */
+
+    await loadPastures();
+
+
+    pastureLocked =
+      true;
+
+
+    boundaryEditMode =
+      false;
+
+
+    boundaryEditLayer
+      .clearLayers();
+
+
+    drawPastures();
+
+
+    $("boundaryStatus")
+      .textContent =
+      "Boundaries saved and locked.";
+
+
+    $("editBoundariesBtn")
+      .classList.remove(
+        "hidden"
+      );
+
+
+    $("saveBoundariesBtn")
+      .classList.add(
+        "hidden"
+      );
+
+
+    $("cancelBoundaryEditBtn")
+      .classList.add(
+        "hidden"
+      );
+
+
+    showToast(
+      "Pasture boundaries saved and locked."
+    );
+
+
+  } catch (error) {
+
+    console.error(
+      error
+    );
+
+
+    showToast(
+      "Boundary save failed..."
+    );
+
+  } finally {
+
+    $("saveBoundariesBtn")
+      .disabled =
+      false;
+
+
+    $("saveBoundariesBtn")
+      .textContent =
+      "Save & lock boundaries";
+
+  }
+
 }
 
-/* -------------------------------------------------------
-   HELPERS
-------------------------------------------------------- */
 
-function parseDateTime(row) {
-  const dateRaw =
-    String(
-      row.date ??
-      row.Date ??
-      ""
-    ).trim();
+function cancelBoundaryEditing() {
 
-  const timeRaw =
-    String(
-      row.time ??
-      row.Time ??
-      ""
-    ).trim();
+  boundaryEditMode =
+    false;
 
-  if (!dateRaw) return null;
+
+  boundaryEditLayer
+    .clearLayers();
+
+
+  /*
+    Reload the saved configuration so unsaved
+    dragging is discarded.
+  */
+
+  loadPastures()
+    .then(
+      () => {
+
+        drawPastures();
+
+      }
+    );
+
+
+  $("editBoundariesBtn")
+    .classList.remove(
+      "hidden"
+    );
+
+
+  $("saveBoundariesBtn")
+    .classList.add(
+      "hidden"
+    );
+
+
+  $("cancelBoundaryEditBtn")
+    .classList.add(
+      "hidden"
+    );
+
+
+  $("boundaryStatus")
+    .textContent =
+    "Boundary changes cancelled.";
+
+}
+
+
+/* ============================================================
+   DATE/TIME HELPERS
+============================================================ */
+
+function parseDateTime(
+  record
+) {
+
+  if (
+    !record.date
+  ) {
+
+    return null;
+
+  }
+
 
   const parts =
-    dateRaw.split(
-      /[\/-]/
-    );
+    record.date
+      .split(
+        /[\/-]/
+      )
+      .map(Number);
 
-  if (parts.length < 2) {
+
+  if (
+    parts.length <
+    2
+  ) {
+
     return null;
+
   }
+
 
   const month =
-    Number(parts[0]);
+    parts[0];
+
 
   const day =
-    Number(parts[1]);
+    parts[1];
+
 
   let year =
-    Number(parts[2]) ||
-    CONFIG.DATA_YEAR;
+    parts[2] ||
+    new Date()
+      .getFullYear();
 
-  if (year < 100) {
-    year += 2000;
+
+  if (
+    year < 100
+  ) {
+
+    year +=
+      2000;
+
   }
 
-  let hour = 12;
-  let minute = 0;
 
-  const t =
-    timeRaw
-      .toUpperCase()
-      .trim();
+  let hour =
+    12;
+
+
+  let minute =
+    0;
+
+
+  const time =
+    String(
+      record.time ||
+      ""
+    )
+      .trim()
+      .toUpperCase();
+
 
   const match =
-    t.match(
-      /(\d{1,2})(?::(\d{2}))?/
+    time.match(
+      /(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?/
     );
 
+
   if (match) {
+
     hour =
-      Number(match[1]);
+      Number(
+        match[1]
+      );
+
 
     minute =
-      Number(match[2] || 0);
+      Number(
+        match[2] ||
+        0
+      );
+
 
     if (
-      t.includes("PM") &&
+      match[3] ===
+      "PM" &&
       hour < 12
     ) {
-      hour += 12;
+
+      hour +=
+        12;
+
     }
+
 
     if (
-      t.includes("AM") &&
+      match[3] ===
+      "AM" &&
       hour === 12
     ) {
-      hour = 0;
+
+      hour =
+        0;
+
     }
+
   }
 
-  const dt =
+
+  const result =
     new Date(
       year,
       month - 1,
@@ -2122,166 +4025,358 @@ function parseDateTime(row) {
       minute
     );
 
+
   return Number.isNaN(
-    dt.getTime()
+    result.getTime()
   )
     ? null
-    : dt;
+    : result;
+
 }
 
-function formatDate(dt) {
-  return dt
-    ? dt.toLocaleDateString(
-        undefined,
-        {
-          month: "short",
-          day: "numeric",
-          year: "numeric"
-        }
-      )
-    : "Unknown date";
-}
 
-function formatTime(dt, raw) {
-  return dt
-    ? dt.toLocaleTimeString(
-        undefined,
-        {
-          hour: "numeric",
-          minute: "2-digit"
-        }
-      )
-    : (
-      raw ||
-      "Unknown time"
-    );
-}
+function formatDate(
+  date
+) {
 
-function toDateInputValue(record) {
-  if (!record.dateTime) {
-    return "";
+  if (
+    !date
+  ) {
+
+    return "Unknown date";
+
   }
 
-  const y =
-    record.dateTime
-      .getFullYear();
 
-  const m =
-    String(
-      record.dateTime
-        .getMonth() + 1
-    ).padStart(2, "0");
+  return date.toLocaleDateString(
+    undefined,
+    {
+      month:
+        "short",
 
-  const d =
-    String(
-      record.dateTime
-        .getDate()
-    ).padStart(2, "0");
+      day:
+        "numeric",
 
-  return `${y}-${m}-${d}`;
+      year:
+        "numeric"
+    }
+  );
+
 }
 
-function toTimeInputValue(record) {
-  if (!record.dateTime) {
-    return "";
+
+function formatTime(
+  date,
+  raw
+) {
+
+  if (
+    !date
+  ) {
+
+    return raw ||
+      "Unknown time";
+
   }
+
+
+  return date.toLocaleTimeString(
+    undefined,
+    {
+      hour:
+        "numeric",
+
+      minute:
+        "2-digit"
+    }
+  );
+
+}
+
+
+function dateKey(
+  date
+) {
 
   return (
+
+    date.getFullYear() +
+
+    "-" +
+
     String(
-      record.dateTime
-        .getHours()
-    ).padStart(2, "0") +
-    ":" +
+      date.getMonth() + 1
+    )
+      .padStart(
+        2,
+        "0"
+      ) +
+
+    "-" +
+
     String(
-      record.dateTime
-        .getMinutes()
-    ).padStart(2, "0")
+      date.getDate()
+    )
+      .padStart(
+        2,
+        "0"
+      )
+
   );
+
 }
 
-function formatDateForSheet(value) {
-  if (!value) return "";
 
-  const [y, m, d] =
-    value.split("-")
+function fromDateInput(
+  value
+) {
+
+  if (!value) {
+    return new Date();
+  }
+
+
+  const [
+    year,
+    month,
+    day
+  ] =
+    value
+      .split("-")
       .map(Number);
 
-  return `${m}/${d}/${y}`;
+
+  return new Date(
+    year,
+    month - 1,
+    day
+  );
+
 }
 
-function formatTimeForSheet(value) {
-  if (!value) return "";
 
-  const [h, m] =
-    value.split(":")
+function formatDateForSheet(
+  date
+) {
+
+  return (
+
+    date.getMonth() + 1 +
+
+    "/" +
+
+    date.getDate() +
+
+    "/" +
+
+    date.getFullYear()
+
+  );
+
+}
+
+
+function formatTimeForSheet(
+  date
+) {
+
+  return date.toLocaleTimeString(
+    undefined,
+    {
+      hour:
+        "numeric",
+
+      minute:
+        "2-digit"
+    }
+  );
+
+}
+
+
+function formatTimeInputForSheet(
+  value
+) {
+
+  if (!value) {
+
+    return "";
+
+  }
+
+
+  const [
+    hourRaw,
+    minute
+  ] =
+    value
+      .split(":")
       .map(Number);
+
 
   const suffix =
-    h >= 12
+    hourRaw >= 12
       ? "PM"
       : "AM";
 
+
   const hour =
-    h % 12 || 12;
+    hourRaw % 12 ||
+    12;
+
+
+  return `${hour}:${String(
+    minute
+  ).padStart(
+    2,
+    "0"
+  )} ${suffix}`;
+
+}
+
+
+function toDateInputValue(
+  record
+) {
+
+  if (
+    !record.dateTime
+  ) {
+
+    return "";
+
+  }
+
+
+  return dateKey(
+    record.dateTime
+  );
+
+}
+
+
+function toTimeInputValue(
+  record
+) {
+
+  if (
+    !record.dateTime
+  ) {
+
+    return "";
+
+  }
+
 
   return (
-    `${hour}:` +
-    `${String(m).padStart(2, "0")} ` +
-    suffix
+
+    String(
+      record.dateTime
+        .getHours()
+    ).padStart(
+      2,
+      "0"
+    ) +
+
+    ":" +
+
+    String(
+      record.dateTime
+        .getMinutes()
+    ).padStart(
+      2,
+      "0"
+    )
+
   );
+
 }
 
-function loadPasturesFromStorage() {
-  try {
-    const saved =
-      localStorage.getItem(
-        "flerdPastures"
-      );
 
-    if (!saved) {
-      return null;
-    }
+/* ============================================================
+   SORTING
+============================================================ */
 
-    const parsed =
-      JSON.parse(saved);
+function sortedRecords() {
 
-    return Array.isArray(parsed)
-      ? parsed
-      : null;
-  } catch (_) {
-    return null;
-  }
+  return [
+    ...allRecords
+  ]
+    .filter(
+      record =>
+        record.dateTime
+    )
+    .sort(
+      (a, b) =>
+        a.dateTime -
+        b.dateTime
+    );
+
 }
 
-function showToast(message) {
-  const el =
+
+function isLastRecord(
+  record
+) {
+
+  const records =
+    sortedRecords();
+
+
+  return (
+    records.length > 0 &&
+    records[
+      records.length - 1
+    ] === record
+  );
+
+}
+
+
+/* ============================================================
+   TOAST
+============================================================ */
+
+function showToast(
+  message
+) {
+
+  const toast =
     $("toast");
 
-  el.textContent =
+
+  toast.textContent =
     message;
 
-  el.classList.add(
+
+  toast.classList.add(
     "show"
   );
+
 
   clearTimeout(
     toastTimer
   );
 
+
   toastTimer =
     setTimeout(
       () => {
-        el.classList.remove(
+
+        toast.classList.remove(
           "show"
         );
+
       },
-      3200
+      3000
     );
+
 }
 
-/* -------------------------------------------------------
+
+/* ============================================================
    BEGIN
-------------------------------------------------------- */
+============================================================ */
 
 document.addEventListener(
   "DOMContentLoaded",
