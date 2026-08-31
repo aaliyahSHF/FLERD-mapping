@@ -1,10 +1,18 @@
 /* =========================================================
    Website styling
    ========================================================= */
+/* =========================================================
+   BASE
+========================================================= */
+
+* {
+  box-sizing: border-box;
+}
 
 html,
 body {
   margin: 0;
+  width: 100%;
   height: 100%;
   overflow: hidden;
 
@@ -15,76 +23,1146 @@ body {
     "Segoe UI",
     sans-serif;
 
+  color: #222;
+}
+
+body {
   background: #222;
 }
 
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.hidden {
+  display: none !important;
+}
+
+
+/* =========================================================
+   MAP
+========================================================= */
 
 #map {
   position: fixed;
   inset: 0;
-
-  background: #222;
 }
-
 
 .leaflet-container {
-  font: inherit;
   background: #222;
+  font: inherit;
 }
 
 
-/* =====================================================
+/* =========================================================
    TOP BAR
-===================================================== */
+========================================================= */
 
 .topbar {
   position: fixed;
 
-  z-index: 1000;
+  z-index: 2000;
 
-  top: max(12px, env(safe-area-inset-top));
-  left: max(12px, env(safe-area-inset-left));
-  right: max(12px, env(safe-area-inset-right));
+  top:
+    max(
+      12px,
+      env(safe-area-inset-top)
+    );
+
+  left:
+    max(
+      12px,
+      env(safe-area-inset-left)
+    );
+
+  right:
+    max(
+      12px,
+      env(safe-area-inset-right)
+    );
 
   display: flex;
 
-  align-items: flex-start;
-  justify-content: space-between;
+  justify-content:
+    space-between;
+
+  align-items:
+    flex-start;
 
   gap: 12px;
 
-  pointer-events: none;
+  pointer-events:
+    none;
 }
-
 
 .topbar > * {
-  pointer-events: auto;
+  pointer-events:
+    auto;
 }
-
 
 .title-card {
-  padding: 10px 14px;
+  background:
+    rgba(255,255,255,.95);
 
-  border-radius: 12px;
+  border-radius:
+    14px;
 
-  background: rgba(255,255,255,.94);
+  padding:
+    8px 12px;
 
   box-shadow:
-    0 3px 16px rgba(0,0,0,.18);
-
-  backdrop-filter: blur(5px);
+    0 4px 18px rgba(0,0,0,.2);
 }
 
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
 h1 {
   margin: 0;
 
   font-size: 18px;
 
-  line-height: 1.1;
+  line-height: 1.15;
+}
+
+.sync-status {
+  margin-top: 3px;
+
+  color: #666;
+
+  font-size: 11px;
+}
+
+.top-actions {
+  display: flex;
+
+  flex-wrap: wrap;
+
+  justify-content: flex-end;
+
+  gap: 7px;
+}
+
+.top-button,
+.record-btn {
+  border: 0;
+
+  border-radius: 10px;
+
+  padding:
+    10px 13px;
+
+  font-weight: 700;
+
+  background:
+    rgba(255,255,255,.95);
+
+  box-shadow:
+    0 4px 18px rgba(0,0,0,.2);
+}
+
+.record-btn {
+  color: white;
+
+  background:
+    #1f6f43;
+}
+
+.record-btn.recording {
+  background:
+    #9b3025;
+}
+
+.top-button.active {
+  color: white;
+
+  background:
+    #5d4a9b;
 }
 
 
+/* =========================================================
+   ICON BUTTON
+========================================================= */
+
+.icon-button {
+  width: 32px;
+  height: 32px;
+
+  border: 0;
+
+  border-radius: 8px;
+
+  background:
+    rgba(0,0,0,.07);
+
+  font-size: 20px;
+
+  line-height: 1;
+}
+
+
+/* =========================================================
+   SIDEBAR
+========================================================= */
+
+.sidebar {
+  position: fixed;
+
+  z-index: 1500;
+
+  top: 0;
+  left: 0;
+  bottom: 0;
+
+  width: min(
+    360px,
+    calc(100vw - 20px)
+  );
+
+  padding:
+    84px 16px 20px;
+
+  background:
+    rgba(255,255,255,.96);
+
+  box-shadow:
+    5px 0 25px rgba(0,0,0,.2);
+
+  overflow-y: auto;
+
+  transition:
+    transform .25s ease;
+}
+
+.sidebar-collapsed .sidebar {
+  transform:
+    translateX(-105%);
+}
+
+.sidebar-header {
+  display: flex;
+
+  align-items: center;
+
+  justify-content:
+    space-between;
+
+  margin-bottom: 12px;
+}
+
+.sidebar-header h2 {
+  margin: 0;
+}
+
+.sidebar-section {
+  padding:
+    14px 0;
+
+  border-top:
+    1px solid #ddd;
+}
+
+.sidebar-section h3 {
+  margin:
+    0 0 8px;
+
+  font-size:
+    13px;
+
+  text-transform:
+    uppercase;
+
+  letter-spacing:
+    .05em;
+}
+
+.sidebar-footer {
+  padding-top: 14px;
+
+  border-top:
+    1px solid #ddd;
+
+  color:
+    #666;
+
+  font-size:
+    12px;
+
+  line-height:
+    1.5;
+}
+
+.help-text {
+  margin:
+    0 0 10px;
+
+  color:
+    #666;
+
+  font-size:
+    12px;
+
+  line-height:
+    1.45;
+}
+
+
+/* =========================================================
+   FORMS
+========================================================= */
+
+.form-field {
+  display:
+    flex;
+
+  flex-direction:
+    column;
+
+  gap: 5px;
+
+  margin-bottom:
+    10px;
+}
+
+.form-field label {
+  font-size:
+    12px;
+
+  font-weight:
+    700;
+
+  color:
+    #444;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+
+  border:
+    1px solid #ccc;
+
+  border-radius:
+    8px;
+
+  padding:
+    9px;
+
+  background:
+    white;
+
+  color:
+    #222;
+
+  outline:
+    none;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color:
+    #1f6f43;
+
+  box-shadow:
+    0 0 0 2px
+    rgba(31,111,67,.12);
+}
+
+textarea {
+  resize:
+    vertical;
+}
+
+.form-grid {
+  display:
+    grid;
+
+  grid-template-columns:
+    1fr 1fr;
+
+  gap:
+    10px;
+}
+
+
+/* =========================================================
+   BUTTONS
+========================================================= */
+
+.button-row {
+  display:
+    flex;
+
+  gap:
+    8px;
+
+  margin-top:
+    12px;
+}
+
+.button-row button {
+  flex:
+    1;
+}
+
+.button-stack {
+  display:
+    flex;
+
+  flex-direction:
+    column;
+
+  gap:
+    8px;
+}
+
+.primary-btn,
+.secondary-btn {
+  border: 0;
+
+  border-radius:
+    9px;
+
+  padding:
+    10px 13px;
+
+  font-weight:
+    700;
+}
+
+.primary-btn {
+  color:
+    white;
+
+  background:
+    #1f6f43;
+}
+
+.primary-btn:disabled {
+  opacity:
+    .55;
+
+  cursor:
+    not-allowed;
+}
+
+.secondary-btn {
+  background:
+    #eee;
+
+  color:
+    #333;
+}
+
+
+/* =========================================================
+   SECTION TOGGLE
+========================================================= */
+
+.section-toggle {
+  width: 100%;
+
+  display:
+    flex;
+
+  justify-content:
+    space-between;
+
+  align-items:
+    center;
+
+  padding:
+    0;
+
+  border:
+    0;
+
+  background:
+    transparent;
+
+  font-weight:
+    800;
+
+  font-size:
+    15px;
+
+  text-align:
+    left;
+}
+
+.pasture-list {
+  margin-top:
+    9px;
+
+  display:
+    flex;
+
+  flex-direction:
+    column;
+
+  gap:
+    5px;
+}
+
+.pasture-list.collapsed {
+  display:
+    none;
+}
+
+.pasture-option {
+  width:
+    100%;
+
+  display:
+    flex;
+
+  align-items:
+    center;
+
+  gap:
+    8px;
+
+  padding:
+    8px 9px;
+
+  border:
+    1px solid #ddd;
+
+  border-radius:
+    8px;
+
+  background:
+    #fafafa;
+
+  text-align:
+    left;
+}
+
+.pasture-option.selected {
+  background:
+    #e9f3ec;
+
+  border-color:
+    #1f6f43;
+
+  font-weight:
+    700;
+}
+
+.pasture-color {
+  width:
+    13px;
+
+  height:
+    13px;
+
+  border-radius:
+    50%;
+
+  flex:
+    0 0 auto;
+}
+
+.all-color {
+  background:
+    #555;
+}
+
+
+/* =========================================================
+   SYNC
+========================================================= */
+
+.sync-info {
+  color:
+    #555;
+
+  font-size:
+    12px;
+}
+
+.sync-info > div {
+  display:
+    flex;
+
+  align-items:
+    center;
+
+  gap:
+    7px;
+
+  margin-bottom:
+    5px;
+}
+
+.sync-dot {
+  display:
+    inline-block;
+
+  width:
+    9px;
+
+  height:
+    9px;
+
+  border-radius:
+    50%;
+
+  background:
+    #1f6f43;
+}
+
+.sync-info small {
+  color:
+    #777;
+}
+
+
+/* =========================================================
+   MODALS
+========================================================= */
+
+.modal {
+  position:
+    fixed;
+
+  z-index:
+    3000;
+
+  inset:
+    0;
+
+  display:
+    flex;
+
+  align-items:
+    center;
+
+  justify-content:
+    center;
+
+  padding:
+    20px;
+
+  background:
+    rgba(0,0,0,.35);
+}
+
+.modal-card {
+  width:
+    min(460px, 100%);
+
+  max-height:
+    90vh;
+
+  overflow:
+    auto;
+
+  padding:
+    20px;
+
+  border-radius:
+    16px;
+
+  background:
+    white;
+
+  box-shadow:
+    0 15px 50px rgba(0,0,0,.3);
+}
+
+.modal-header {
+  display:
+    flex;
+
+  align-items:
+    center;
+
+  justify-content:
+    space-between;
+
+  gap:
+    12px;
+
+  margin-bottom:
+    10px;
+}
+
+.modal-header h2 {
+  margin:
+    0;
+}
+
+.selected-location {
+  margin:
+    10px 0;
+
+  padding:
+    10px;
+
+  border-radius:
+    9px;
+
+  background:
+    #f0f5f2;
+
+  font-size:
+    13px;
+}
+
+.admin-status {
+  padding:
+    10px;
+
+  border-radius:
+    9px;
+
+  background:
+    #f1f1f1;
+
+  margin-bottom:
+    12px;
+
+  font-size:
+    13px;
+
+  font-weight:
+    700;
+}
+
+
+/* =========================================================
+   PASTURE TOOLTIP
+========================================================= */
+
+.pasture-tooltip {
+  border:
+    0 !important;
+
+  border-radius:
+    8px !important;
+
+  padding:
+    6px 9px !important;
+
+  background:
+    rgba(255,255,255,.95) !important;
+
+  color:
+    #222 !important;
+
+  font-weight:
+    800;
+
+  box-shadow:
+    0 3px 12px rgba(0,0,0,.2);
+}
+
+.pasture-tooltip::before {
+  display:
+    none !important;
+}
+
+
+/* =========================================================
+   FLERD PINS
+========================================================= */
+
+.flerd-marker {
+  background:
+    transparent;
+
+  border:
+    0;
+}
+
+.flerd-marker-inner {
+  width:
+    34px;
+
+  height:
+    34px;
+
+  display:
+    flex;
+
+  align-items:
+    center;
+
+  justify-content:
+    center;
+
+  border-radius:
+    50%;
+
+  background:
+    rgba(255,255,255,.9);
+
+  border:
+    2px solid #222;
+
+  box-shadow:
+    0 3px 10px rgba(0,0,0,.25);
+}
+
+.flerd-marker-inner.latest {
+  width:
+    42px;
+
+  height:
+    42px;
+
+  border-width:
+    3px;
+}
+
+.flerd-marker-inner img {
+  width:
+    75%;
+
+  height:
+    75%;
+
+  object-fit:
+    contain;
+}
+
+
+/* =========================================================
+   POPUPS
+========================================================= */
+
+.location-popup {
+  min-width:
+    180px;
+
+  line-height:
+    1.45;
+}
+
+.popup-notes {
+  margin-top:
+    7px;
+
+  padding:
+    7px;
+
+  border-radius:
+    7px;
+
+  background:
+    #f4f4f4;
+}
+
+.popup-edit-btn {
+  width:
+    100%;
+
+  margin-top:
+    9px;
+
+  padding:
+    7px;
+
+  border:
+    0;
+
+  border-radius:
+    7px;
+
+  color:
+    white;
+
+  background:
+    #1f6f43;
+
+  font-weight:
+    700;
+}
+
+
+/* =========================================================
+   BOUNDARY EDITING
+========================================================= */
+
+.boundary-handle {
+  background:
+    transparent;
+
+  border:
+    0;
+}
+
+.boundary-handle > div {
+  width:
+    18px;
+
+  height:
+    18px;
+
+  border-radius:
+    50%;
+
+  background:
+    white;
+
+  border:
+    3px solid #111;
+
+  box-shadow:
+    0 2px 7px rgba(0,0,0,.4);
+}
+
+
+/* =========================================================
+   LOGGED STAR
+========================================================= */
+
+.logged-star {
+  position:
+    fixed;
+
+  z-index:
+    5000;
+
+  right:
+    30px;
+
+  top:
+    50%;
+
+  transform:
+    translateY(-50%);
+
+  width:
+    230px;
+
+  height:
+    230px;
+
+  display:
+    flex;
+
+  align-items:
+    center;
+
+  justify-content:
+    center;
+
+  background:
+    #fff;
+
+  filter:
+    drop-shadow(
+      0 8px 18px
+      rgba(0,0,0,.25)
+    );
+
+  clip-path:
+    polygon(
+      50% 0%,
+      61% 28%,
+      88% 12%,
+      78% 40%,
+      100% 50%,
+      78% 60%,
+      88% 88%,
+      61% 72%,
+      50% 100%,
+      39% 72%,
+      12% 88%,
+      22% 60%,
+      0% 50%,
+      22% 40%,
+      12% 12%,
+      39% 28%
+    );
+
+  animation:
+    logged-pop .3s ease-out;
+}
+
+.logged-star-inner {
+  width:
+    145px;
+
+  text-align:
+    center;
+}
+
+.logged-title {
+  margin-bottom:
+    7px;
+
+  font-size:
+    25px;
+
+  font-weight:
+    900;
+}
+
+.logged-summary {
+  font-size:
+    12px;
+
+  line-height:
+    1.4;
+}
+
+.star-edit-button {
+  margin-top:
+    9px;
+
+  padding:
+    6px 15px;
+
+  border:
+    0;
+
+  border-radius:
+    20px;
+
+  background:
+    #1f6f43;
+
+  color:
+    white;
+
+  font-weight:
+    800;
+}
+
+@keyframes logged-pop {
+
+  from {
+    opacity:
+      0;
+
+    transform:
+      scale(.7);
+  }
+
+  to {
+    opacity:
+      1;
+
+    transform:
+      scale(1);
+  }
+
+}
+
+
+/* =========================================================
+   TOAST
+========================================================= */
+
+.toast {
+  position:
+    fixed;
+
+  z-index:
+    6000;
+
+  left:
+    50%;
+
+  bottom:
+    24px;
+
+  transform:
+    translate(-50%, 20px);
+
+  padding:
+    10px 15px;
+
+  border-radius:
+    10px;
+
+  background:
+    rgba(25,25,25,.92);
+
+  color:
+    white;
+
+  font-size:
+    13px;
+
+  opacity:
+    0;
+
+  pointer-events:
+    none;
+
+  transition:
+    opacity .2s,
+    transform .2s;
+}
+
+.toast.show {
+  opacity:
+    1;
+
+  transform:
+    translate(-50%, 0);
+}
+
+
+/* =========================================================
+   MOBILE
+========================================================= */
+
+@media (max-width: 700px) {
+
+  .top-actions {
+    max-width:
+      60%;
+
+  }
+
+  .top-button {
+    display:
+      none;
+  }
+
+  .sidebar {
+    width:
+      min(
+        340px,
+        calc(100vw - 30px)
+      );
+  }
+
+  .logged-star {
+    width:
+      190px;
+
+    height:
+      190px;
+
+    right:
+      10px;
+  }
+
+  .logged-star-inner {
+    width:
+      120px;
+  }
+
+}
 .sync-status {
   margin-top: 3px;
 
