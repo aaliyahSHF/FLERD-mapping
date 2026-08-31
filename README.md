@@ -15,14 +15,14 @@ This Leaflet + GitHub + Google Sheets masterpiece of a pasture tracker is for tr
 - Automatically determines the pasture from the tapped coordinates (which are determined via pixel).
 - Optional addition of notes for each location.
 - Alternating black cow and sheep silhouette pins :)
-- Most recent pin is highlighted.
+- Most recent pin is most opaque.
 - Full historical movement path is shown lightly.
 - Last 7 days are emphasized with a heavier path.
 - Edit mode lets you select an existing pin, drag it to a more accurate location, and save the change.
 - Existing pins can also have their date, time, and notes corrected.
 - Google Sheets can be used as the shared source of data. They are synced up. 
 - Map -> Google Sheets: new pins and edited pins are written to the sheet, with x,y axis coordinates
-- Google Sheets -> Map: the website polls the sheet every 15 seconds and reflects spreadsheet edits. Also places a pin in the middle of the pasture (can come back to readjust later)
+- Google Sheets -> Map: the website polls the sheet every 15 seconds and reflects spreadsheet edits. Also places a pin in the middle of the pasture logged in sheet (one can come back to readjust later)
 - Stable IDs prevent moving an existing pin from creating a duplicate row.
 - Local CSV fallback is included for development/offline-ish use.
 - Desktop/mobile layout.
@@ -77,7 +77,7 @@ The site sync up with Google Sheets every 15 seconds rather than using a true li
 
 If two people edit the same record at the same time, the most recent save wins.
 
-The simple `Anyone` Apps Script deployment is convenient for sharing & multiple devices, but not private. Anyone who obtains the web-app URL could potentially submit data. For a private production deployment, one couldddd add authentication/access control.
+The `Anyone` Apps Script deployment is convenient for sharing & multiple devices, but not private. Anyone who obtains the web-app URL could potentially submit data. For a private production deployment, one couldddd add authentication/access control.
 
 ## Pasture boundary accuracy
 
