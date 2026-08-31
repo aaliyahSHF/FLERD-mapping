@@ -1,453 +1,235 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>FLERD Mapping</title>
 
-  <title>Flerd Pasture Tracker :) </title>
-
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-
-  <link
-    rel="stylesheet"
-    href="styles.css">
+    <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
 
-  <main
-    id="map"
-    aria-label="Flerd pasture map">
-  </main>
-
-
-  <!-- TOP BAR -->
-
-  <section class="topbar">
-
-    <div class="title-card">
-
-      <h1>Flerd Pasture Tracker</h1>
-
-      <div
-        id="syncStatus"
-        class="sync-status">
-        Loading…
-      </div>
-
-    </div>
-
-
-    <div class="top-actions">
-
-      <button
-        id="editPasturesBtn"
-        class="edit-btn pasture-edit-btn"
-        type="button">
-        Edit pasture boundaries
-      </button>
-
-      <button
-        id="savePasturesBtn"
-        class="edit-btn hidden"
-        type="button">
-        Save boundaries
-      </button>
-
-      <button
-        id="cancelPasturesBtn"
-        class="edit-btn hidden"
-        type="button">
-        Cancel
-      </button>
-
-      <button
-        id="editBtn"
-        class="edit-btn"
-        type="button">
-        Edit pins
-      </button>
-
-      <button
-        id="recordBtn"
-        class="record-btn"
-        type="button">
-        Record location
-      </button>
-
-    </div>
-
-  </section>
-
-
-  <!-- LEGEND -->
-
-  <aside
-    id="legend"
-    class="legend"
-    aria-label="Flerd status legend">
-
-    <h2>Flerd status</h2>
-
-
-    <!-- LAST SEEN -->
-
-    <div class="legend-section">
-
-      <h3>Last seen</h3>
-
-      <div class="legend-row">
-
-        <span class="legend-last-dot"></span>
-
-        <span>
-          Last documented pin
-        </span>
-
-      </div>
-
-      <div
-        id="lastSeenText"
-        class="legend-detail">
-        No location yet
-      </div>
-
-
-      <!-- PAST PATH LOOKUP -->
-
-      <div class="past-path-lookup">
-
-        <div class="past-path-title">
-          Past Path Lookup
+    <header class="topbar">
+        <div class="brand">
+            <h1>FLERD</h1>
+            <span>Herd &amp; Pasture Mapping</span>
         </div>
 
-        <div class="past-path-help">
-          Enter a date to see the Flerd's movement that day.
+        <div class="sync-status">
+            <span id="syncIndicator" class="sync-dot"></span>
+            <span id="syncStatus">Connecting...</span>
         </div>
+    </header>
 
-        <div class="past-path-controls">
 
-          <input
-            id="pastPathDate"
-            class="past-path-date"
-            type="text"
-            inputmode="numeric"
-            autocomplete="off"
-            placeholder="MM/DD/YYYY"
-            maxlength="10"
-            aria-label="Past path date">
+    <main class="app-container">
 
-          <button
-            id="pastPathShow"
-            class="past-path-btn"
-            type="button">
-            Show Path
-          </button>
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
 
-          <button
-            id="pastPathClear"
-            class="past-path-btn secondary"
-            type="button">
-            Clear
-          </button>
+            <section class="panel">
+                <h2>Record Location</h2>
 
-        </div>
+                <p class="help-text">
+                    Select an animal, then click its current location on the map.
+                </p>
 
-        <div
-          id="pastPathStatus"
-          class="past-path-status">
-        </div>
+                <label for="animalSelect">Animal</label>
+                <select id="animalSelect">
+                    <option value="">Select animal...</option>
+                </select>
 
-      </div>
+                <label for="animalType">Animal Type</label>
+                <select id="animalType">
+                    <option value="sheep">Sheep</option>
+                    <option value="cow">Cow</option>
+                    <option value="other">Other</option>
+                </select>
 
-    </div>
+                <button id="startLocationButton" class="primary-button">
+                    Set Location
+                </button>
 
+                <div id="locationInstructions" class="instructions hidden">
+                    Click the animal's location on the map.
+                </div>
 
-    <!-- LAST 7 DAYS -->
+                <button id="cancelLocationButton" class="secondary-button hidden">
+                    Cancel
+                </button>
+            </section>
 
-    <div class="legend-section">
 
-      <h3>Last 7 days</h3>
+            <!-- DATE RANGE -->
+            <section class="panel">
+                <h2>Movement History</h2>
 
-      <div class="legend-row">
+                <label for="historyStartDate">From</label>
+                <input type="date" id="historyStartDate">
 
-        <span class="legend-line"></span>
+                <label for="historyEndDate">To</label>
+                <input type="date" id="historyEndDate">
 
-        <span>
-          Movement path
-        </span>
+                <label for="historyArea">Area</label>
+                <select id="historyArea">
+                    <option value="property">Total Property</option>
+                </select>
 
-      </div>
+                <button id="showHistoryButton" class="primary-button">
+                    Show Movement
+                </button>
 
-      <div
-        id="sevenDayText"
-        class="legend-detail">
-        No recent locations yet
-      </div>
+                <button id="clearHistoryButton" class="secondary-button">
+                    Clear Movement
+                </button>
+            </section>
 
-    </div>
 
+            <!-- CURRENT LOCATIONS -->
+            <section class="panel">
+                <h2>Current Locations</h2>
 
-    <!-- PASTURES -->
+                <div id="currentLocations" class="animal-list">
+                    <p class="muted">Loading locations...</p>
+                </div>
+            </section>
 
-    <div class="legend-section pasture-section">
 
-      <button
-        id="pastureToggle"
-        class="pasture-toggle"
-        type="button">
+            <!-- PASTURES -->
+            <section class="panel">
+                <h2>Pastures</h2>
 
-        <span>
-          Pastures
-        </span>
+                <div id="pastureList"></div>
+            </section>
 
-        <span
-          id="pastureChevron"
-          class="pasture-chevron">
-          ▼
-        </span>
+        </aside>
 
-      </button>
 
+        <!-- MAP -->
+        <section class="map-container">
 
-      <div
-        id="pastureLegend"
-        class="pasture-list collapsed">
+            <div id="map"></div>
 
-        <div class="pasture-collapsed-hint">
-          Click Pastures to choose a pasture
-        </div>
+            <div id="mapLegend" class="map-legend">
 
-      </div>
+                <div class="legend-title">
+                    Legend
+                </div>
 
-    </div>
+                <div class="legend-item">
+                    <span class="legend-symbol pasture-symbol"></span>
+                    Pasture
+                </div>
 
+                <div class="legend-item">
+                    <span class="legend-symbol location-symbol"></span>
+                    Animal Location
+                </div>
 
-    <!-- HELP -->
+                <div class="legend-item">
+                    <span class="legend-symbol path-symbol"></span>
+                    Movement
+                </div>
 
-    <div class="legend-footer">
+            </div>
 
-      <strong>Record location</strong>
-      adds a new pin.
+            <div id="mapMessage" class="map-message hidden"></div>
 
-      <strong>Edit pins</strong>
-      lets you drag an existing pin.
+        </section>
 
-      <strong>Edit pasture boundaries</strong>
-      lets you drag pasture points.
+    </main>
 
-    </div>
 
-  </aside>
+    <!-- LOCATION DETAILS MODAL -->
+    <div id="locationModal" class="modal hidden">
 
+        <div class="modal-content">
 
-  <!-- RECORD LOCATION PANEL -->
+            <button id="closeLocationModal" class="modal-close">
+                &times;
+            </button>
 
-  <div
-    id="recordPanel"
-    class="record-panel hidden"
-    role="dialog"
-    aria-modal="true">
+            <h2>Animal Location</h2>
 
-    <div class="record-card">
+            <div id="locationDetails"></div>
 
-      <div class="record-header">
+            <div class="modal-actions">
 
-        <h2>
-          Record Flerd location
-        </h2>
+                <button
+                    id="editLocationButton"
+                    class="primary-button">
+                    Edit Location
+                </button>
 
-        <button
-          id="closeRecord"
-          type="button"
-          aria-label="Close">
-          ×
-        </button>
+                <button
+                    id="deleteLocationButton"
+                    class="danger-button">
+                    Delete Location
+                </button>
 
-      </div>
-
-
-      <p id="tapHint">
-        Tap the map to choose a location.
-      </p>
-
-
-      <div
-        id="selectedLocation"
-        class="selected-location hidden">
-      </div>
-
-
-      <label for="notes">
-        Notes (optional)
-      </label>
-
-      <textarea
-        id="notes"
-        rows="3"
-        placeholder="e.g. under apple tree, near rock wall…">
-      </textarea>
-
-
-      <div class="record-actions">
-
-        <button
-          id="cancelRecord"
-          class="secondary-btn"
-          type="button">
-          Cancel
-        </button>
-
-        <button
-          id="saveRecord"
-          class="primary-btn"
-          type="button"
-          disabled>
-          Save location
-        </button>
-
-      </div>
-
-    </div>
-
-  </div>
-
-
-  <!-- EDIT PIN PANEL -->
-
-  <div
-    id="editPanel"
-    class="record-panel hidden"
-    role="dialog"
-    aria-modal="true">
-
-    <div class="record-card">
-
-      <div class="record-header">
-
-        <h2>
-          Move Flerd pin
-        </h2>
-
-        <button
-          id="closeEdit"
-          type="button"
-          aria-label="Close">
-          ×
-        </button>
-
-      </div>
-
-
-      <p>
-        Drag the pin to the accurate location.
-        You can also correct the date, time, or note.
-      </p>
-
-
-      <div
-        id="editSelectedLocation"
-        class="selected-location">
-      </div>
-
-
-      <div class="form-grid">
-
-        <div>
-
-          <label for="editDate">
-            Date
-          </label>
-
-          <input
-            id="editDate"
-            type="date">
+            </div>
 
         </div>
 
+    </div>
 
-        <div>
 
-          <label for="editTime">
-            Time
-          </label>
+    <!-- SAVE LOCATION MODAL -->
+    <div id="saveLocationModal" class="modal hidden">
 
-          <input
-            id="editTime"
-            type="time">
+        <div class="modal-content">
+
+            <h2>Save Location</h2>
+
+            <div id="saveLocationDetails"></div>
+
+            <label for="locationNotes">
+                Notes
+            </label>
+
+            <textarea
+                id="locationNotes"
+                rows="4"
+                placeholder="Optional notes..."></textarea>
+
+            <div class="modal-actions">
+
+                <button
+                    id="saveLocationButton"
+                    class="primary-button">
+                    Save Location
+                </button>
+
+                <button
+                    id="cancelSaveLocationButton"
+                    class="secondary-button">
+                    Cancel
+                </button>
+
+            </div>
 
         </div>
 
-      </div>
-
-
-      <label for="editNotes">
-        Notes
-      </label>
-
-      <textarea
-        id="editNotes"
-        rows="3"
-        placeholder="Update the note if needed…">
-      </textarea>
-
-
-      <div class="record-actions">
-
-        <button
-          id="cancelEditBtn"
-          class="secondary-btn"
-          type="button">
-          Cancel
-        </button>
-
-        <button
-          id="saveEdit"
-          class="primary-btn"
-          type="button">
-          Save pin position
-        </button>
-
-      </div>
-
     </div>
 
-  </div>
 
+    <!-- LEAFLET -->
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        crossorigin=""
+    />
 
-  <!-- MESSAGE TOAST -->
+    <script
+        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        crossorigin="">
+    </script>
 
-  <div
-    id="toast"
-    class="toast"
-    aria-live="polite">
-  </div>
-
-
-  <!-- LEAFLET -->
-
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
-  </script>
-
-
-  <!-- CSV PARSER -->
-
-  <script
-    src="https://cdn.jsdelivr.net/npm/papaparse@5.5.3/papaparse.min.js">
-  </script>
-
-
-  <!-- FLERD TRACKER CODE -->
-
-  <script src="pastures.js"></script>
-
-  <script src="app.js"></script>
+    <script src="pastures.js"></script>
+    <script src="app.js"></script>
+    <script src="script.js"></script>
 
 </body>
 </html>
