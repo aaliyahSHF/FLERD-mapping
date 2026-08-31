@@ -180,7 +180,7 @@ function saveLocation(payload) {
   if (!sheet) {
 
     throw new Error(
-      'The "Log" sheet does not exist.'
+      'The "Log" sheet doesn't exist.'
     );
 
   }
@@ -620,7 +620,7 @@ function getPastureConfiguration() {
 function savePastures(payload) {
 
   /*
-    The administrator key is stored as a Script Property.
+    The admini key is stored as a Script Property.
 
     Set it in Apps Script:
 
@@ -651,7 +651,7 @@ function savePastures(payload) {
     return {
       ok: false,
       error:
-        "Administrator authorization failed."
+        "Denied :( "
     };
 
   }
