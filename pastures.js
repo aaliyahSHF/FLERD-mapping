@@ -55,7 +55,6 @@ window.DEFAULT_PASTURES = [
   {
     id: "3",
     name: "Pasture 3",
-    group: "3",
     color: "#7e57c2",
 
     polygon: [
